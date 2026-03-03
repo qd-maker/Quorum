@@ -46,7 +46,7 @@
 ### 1. Clone & configure
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/qd-maker/Quorum.git
 cd quorum
 cp .env.example .env
 ```
