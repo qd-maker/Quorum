@@ -23,19 +23,23 @@ const MAX_TEXT_MB = 2
 
 // ─── Participant Card ─────────────────────────────
 function ParticipantCard({
-  modelId, status,
+  modelId, status, onClick
 }: {
   modelId: ModelId
   status: 'waiting' | 'typing' | 'done' | 'idle'
+  onClick?: () => void
 }) {
   const meta = MODEL_META[modelId]
   const statusLabel = { waiting: '等待中', typing: '发言中', done: '完成', idle: '' }
 
   return (
-    <div className={clsx(
-      'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-500',
-      status === 'typing' ? 'bg-bg-3 border-white/15' : 'bg-bg-2 border-white/6',
-    )}>
+    <div
+      onClick={onClick}
+      className={clsx(
+        'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-500',
+        status === 'typing' ? 'bg-bg-3 border-white/15' : 'bg-bg-2 border-white/6',
+        onClick && 'cursor-pointer hover:bg-bg-3'
+      )}>
       <div className="relative">
         <ModelAvatar modelId={modelId} size="sm" />
         {status !== 'idle' && (
@@ -87,7 +91,7 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
     'deepseek-chat': 'bubble-deepseek',
   }
   return (
-    <div className="flex gap-3 animate-fade-in-up" style={{ opacity: 0 }}>
+    <div id={msg.id} className="flex gap-3 animate-fade-in-up" style={{ opacity: 0 }}>
       <ModelAvatar modelId={msg.model} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-2">
@@ -693,6 +697,23 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     }
   }, [followUpInput, isFollowingUp, followUpItems.length])
 
+  const scrollToModel = useCallback((modelId: ModelId) => {
+    // 优先跳转到最新的一轮
+    let el = document.getElementById(`r2-${modelId}`)
+    if (!el || phase === 'round1') {
+      el = document.getElementById(`r1-${modelId}`)
+    }
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // 闪烁高亮提示
+      el.classList.add('animate-pulse', 'bg-white/5', 'rounded-xl', '-mx-2', 'px-2', 'transition-colors', 'duration-500')
+      setTimeout(() => {
+        el?.classList.remove('animate-pulse', 'bg-white/5')
+        setTimeout(() => el?.classList.remove('rounded-xl', '-mx-2', 'px-2', 'transition-colors', 'duration-500'), 500)
+      }, 1000)
+    }
+  }, [phase])
+
   const r1Messages = messages.filter(m => m.round === 1)
   const r2Messages = messages.filter(m => m.round === 2)
   const showR2Divider = phase === 'round2' || phase === 'consensus' || phase === 'done'
@@ -735,7 +756,12 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
           {/* Participant indicators */}
           <div className="hidden md:flex items-center gap-1.5">
             {MODELS.map(m => (
-              <ParticipantCard key={m} modelId={m} status={modelStatus[m]} />
+              <ParticipantCard
+                key={m}
+                modelId={m}
+                status={modelStatus[m]}
+                onClick={() => scrollToModel(m)}
+              />
             ))}
           </div>
           {phase !== 'done' && (
