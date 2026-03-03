@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Key, Globe, Server, Cpu } from 'lucide-react'
+import { X, Key, Globe, Server, Cpu, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 
 // ─── 默认配置结构 ─────────────────────────────────
@@ -48,7 +48,7 @@ function saveConfig(config: ApiConfig) {
 
 // ─── Input Row ───────────────────────────────────
 function ConfigInput({
-    label, value, onChange, placeholder, icon: Icon, type = 'text',
+    label, value, onChange, placeholder, icon: Icon, type = 'text', link,
 }: {
     label: string
     value: string
@@ -56,12 +56,24 @@ function ConfigInput({
     placeholder?: string
     icon?: React.ElementType
     type?: string
+    link?: string
 }) {
     return (
         <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-text-3 mb-1.5">
                 {Icon && <Icon size={12} className="text-text-5" />}
                 {label}
+                {link && (
+                    <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto flex items-center gap-0.5 text-violet-400 hover:text-violet-300 transition-colors font-normal"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        获取 <ExternalLink size={10} />
+                    </a>
+                )}
             </label>
             <input
                 type={type}
@@ -169,6 +181,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             placeholder="sk-..."
                             icon={Key}
                             type="password"
+                            link="https://api.bltcy.ai/register?aff=3bWU85797"
                         />
                         <p className="text-xs text-text-5 leading-relaxed">
                             如果使用中转站，所有模型将通过此代理访问。优先级高于官方 API。
@@ -183,6 +196,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             onChange={update('openaiKey')}
                             placeholder="sk-..."
                             type="password"
+                            link="https://platform.openai.com/api-keys"
                         />
                         <ConfigInput
                             label="Google AI API Key"
@@ -190,6 +204,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             onChange={update('googleKey')}
                             placeholder="AIza..."
                             type="password"
+                            link="https://aistudio.google.com/app/apikey"
                         />
                         <ConfigInput
                             label="xAI (Grok) API Key"
@@ -197,6 +212,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             onChange={update('xaiKey')}
                             placeholder="xai-..."
                             type="password"
+                            link="https://console.x.ai"
                         />
                         <ConfigInput
                             label="DeepSeek API Key"
@@ -204,6 +220,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             onChange={update('deepseekKey')}
                             placeholder="sk-..."
                             type="password"
+                            link="https://platform.deepseek.com/api_keys"
                         />
                     </Section>
 
