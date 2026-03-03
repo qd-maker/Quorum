@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Users, Sparkles, ArrowRight, RotateCcw, Trash2, Square, Paperclip, X, FileText, ImageIcon } from 'lucide-react'
+import { Users, Sparkles, ArrowRight, RotateCcw, Trash2, Square, Paperclip, X, FileText, Send } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, DiscussMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
@@ -13,6 +13,7 @@ import { apiFetch } from '../lib/api'
 
 // ─── Types ───────────────────────────────────────
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
+interface FollowUpItem { question: string; answer: string; isStreaming: boolean }
 const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
 
 // ─── Allowed file types ───────────────────────────────
@@ -99,6 +100,36 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
             isStreaming={!!msg.isStreaming}
             accentColor={meta.color}
           />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── FollowUp Bubble ─────────────────────────────
+function FollowUpBubble({ item }: { item: FollowUpItem }) {
+  return (
+    <div className="space-y-3 animate-fade-in">
+      {/* 用户追问 */}
+      <div className="flex justify-end">
+        <div className="max-w-[78%] px-4 py-3 rounded-xl rounded-tr-sm bg-violet-500/20 border border-violet-500/25 text-sm text-text-2 leading-relaxed">
+          {item.question}
+        </div>
+      </div>
+      {/* 主持人回复 */}
+      <div className="flex gap-3">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/40 to-cyan-500/40 flex items-center justify-center flex-shrink-0 border border-violet-500/30">
+          <Sparkles size={14} className="text-violet-300" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold text-violet-300">主持人</span>
+            <span className="text-xs text-text-5">综合分析</span>
+          </div>
+          <div className="bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed border border-violet-500/15">
+            {item.answer || <span className="opacity-40">正在思考...</span>}
+            {item.isStreaming && <span className="inline-block w-1.5 h-4 ml-0.5 bg-violet-400 rounded-sm animate-pulse align-middle" />}
+          </div>
         </div>
       </div>
     </div>
@@ -325,7 +356,11 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle',
   })
   const [consensusContent, setConsensusContent] = useState('')
+  const [followUpItems, setFollowUpItems] = useState<FollowUpItem[]>([])
+  const [followUpInput, setFollowUpInput] = useState('')
+  const [isFollowingUp, setIsFollowingUp] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const followUpAbortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(sessionId || null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -339,7 +374,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, typingModels, consensusContent])
+  }, [messages, typingModels, consensusContent, followUpItems])
 
   // 加载历史讨论（仅在 active 且 sessionId 变化时触发）
   useEffect(() => {
@@ -563,15 +598,100 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
   const handleReset = () => {
     if (abortRef.current) abortRef.current.abort()
+    if (followUpAbortRef.current) followUpAbortRef.current.abort()
     sessionIdRef.current = null
     setPhase('idle')
     setTopic('')
     setMessages([])
     setConsensusContent('')
+    setFollowUpItems([])
+    setFollowUpInput('')
+    setIsFollowingUp(false)
     setTypingModels([])
     setModelStatus({ 'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle' })
     navigate('/discuss', { replace: true })
   }
+
+  const handleFollowUp = useCallback(async () => {
+    const q = followUpInput.trim()
+    if (!q || isFollowingUp) return
+
+    // 构建讨论上下文文本
+    const contextParts: string[] = []
+    const r1 = messagesRef.current.filter(m => m.round === 1)
+    const r2 = messagesRef.current.filter(m => m.round === 2)
+    if (r1.length) {
+      contextParts.push('【第一轮讨论】')
+      r1.forEach(m => {
+        const name = MODEL_META[m.model]?.shortName || m.model
+        contextParts.push(`${name}：\n${m.content}`)
+      })
+    }
+    if (r2.length) {
+      contextParts.push('\n【第二轮讨论】')
+      r2.forEach(m => {
+        const name = MODEL_META[m.model]?.shortName || m.model
+        contextParts.push(`${name}：\n${m.content}`)
+      })
+    }
+    if (consensusRef.current) {
+      contextParts.push(`\n【达成共识】\n${consensusRef.current}`)
+    }
+    const context = contextParts.join('\n\n')
+
+    const idx = followUpItems.length  // 用来更新对应条目
+    setFollowUpItems(prev => [...prev, { question: q, answer: '', isStreaming: true }])
+    setFollowUpInput('')
+    setIsFollowingUp(true)
+
+    try {
+      followUpAbortRef.current = new AbortController()
+      const res = await apiFetch('/api/discuss/followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, topic: topicRef.current, context, models: MODELS }),
+        signal: followUpAbortRef.current.signal,
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6).trim()
+          if (!payload) continue
+          try {
+            const evt = JSON.parse(payload)
+            if (evt.type === 'followup_chunk') {
+              setFollowUpItems(prev => prev.map((item, i) =>
+                i === idx ? { ...item, answer: item.answer + evt.content } : item
+              ))
+            } else if (evt.type === 'followup_done') {
+              setFollowUpItems(prev => prev.map((item, i) =>
+                i === idx ? { ...item, isStreaming: false } : item
+              ))
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setFollowUpItems(prev => prev.map((item, i) =>
+          i === idx ? { ...item, answer: item.answer || '[请求失败，请重试]', isStreaming: false } : item
+        ))
+      }
+    } finally {
+      setIsFollowingUp(false)
+    }
+  }, [followUpInput, isFollowingUp, followUpItems.length])
 
   const r1Messages = messages.filter(m => m.round === 1)
   const r2Messages = messages.filter(m => m.round === 2)
@@ -668,22 +788,50 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             </>
           )}
 
+          {/* Follow-up Q&A */}
+          {followUpItems.map((item, i) => (
+            <FollowUpBubble key={i} item={item} />
+          ))}
+
           <div ref={bottomRef} className="h-4" />
         </div>
       </div>
 
-      {/* Footer hint */}
+      {/* Footer: 追问输入框（讨论完成后） */}
       {phase === 'done' && (
         <div className="flex-shrink-0 px-5 py-3 border-t border-white/5 bg-bg-1/40 backdrop-blur-sm">
-          <div className="max-w-3xl mx-auto flex items-center justify-between">
-            <p className="text-xs text-text-5">讨论已完成 · 基于 2 轮对话达成共识</p>
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r from-violet-500/20 to-cyan-500/20 border border-violet-500/30 text-violet-300 hover:text-violet-200 hover:border-violet-500/50 transition-all"
-            >
-              <Sparkles size={12} />
-              开启新讨论
-            </button>
+          <div className="max-w-3xl mx-auto space-y-2">
+            {/* 追问输入行 */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center gap-2 bg-bg-3 border border-white/10 rounded-xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
+                <Sparkles size={13} className="text-violet-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={followUpInput}
+                  onChange={e => setFollowUpInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp() } }}
+                  placeholder="向主持人追问…"
+                  disabled={isFollowingUp}
+                  className="flex-1 bg-transparent text-sm text-text-1 placeholder:text-text-5 outline-none disabled:opacity-50"
+                />
+              </div>
+              <button
+                onClick={handleFollowUp}
+                disabled={!followUpInput.trim() || isFollowingUp}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send size={13} />
+                追问
+              </button>
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-1.5 px-3 py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all"
+              >
+                <RotateCcw size={12} />
+                新议题
+              </button>
+            </div>
+            <p className="text-xs text-text-5 pl-1">讨论已完成 · 基于 2 轮对话达成共识 · 可继续追问主持人</p>
           </div>
         </div>
       )}

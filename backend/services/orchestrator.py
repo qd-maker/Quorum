@@ -77,6 +77,15 @@ def _consensus_system(topic: str, all_views: dict[str, list[str]]) -> str:
     )
 
 
+def _followup_system(topic: str, context: str) -> str:
+    return (
+        f"你是一位中立的讨论主持人。以下是多个 AI 模型关于「{topic}」的完整讨论记录（含共识）：\n\n"
+        f"{context}\n\n"
+        "用户现在对上述讨论有进一步的追问，请以主持人身份，基于以上完整讨论内容作出回应。"
+        "要求：回答须贴合实际讨论内容，客观中立，200-400字，用中文回复。"
+    )
+
+
 # ─── SSE 事件辅助 ─────────────────────────────────────
 
 def _sse(data: dict) -> str:
@@ -172,20 +181,49 @@ async def run_discussion(
 
             yield _sse({"type": "model_done", "model": model, "round": 2})
 
-    # ── 共识生成 ───────────────────────────────────
+    # ── 共识生成（遍历模型直到成功）────────────────────
 
     system = _consensus_system(topic, all_views)
-    consensus_model = models[0]  # 默认用第一个模型生成共识
+    consensus_user_msg = [{"role": "user", "content": f"请根据以上讨论记录，为「{topic}」这一议题生成共识摘要。"}]
+    consensus_generated = False
 
-    try:
-        async for chunk in stream_chat(
-            consensus_model,
-            [{"role": "user", "content": f"请根据以上讨论记录，为「{topic}」这一议题生成共识摘要。"}],
-            system,
-        ):
-            yield _sse({"type": "consensus_chunk", "content": chunk})
-    except Exception as e:
-        logger.exception("Consensus generation error")
-        yield _sse({"type": "consensus_chunk", "content": f"\n\n[共识生成失败: {e}]"})
+    for consensus_model in models:
+        try:
+            async for chunk in stream_chat(consensus_model, consensus_user_msg, system):
+                yield _sse({"type": "consensus_chunk", "content": chunk})
+            consensus_generated = True
+            break  # 成功则退出
+        except Exception:
+            logger.warning(f"Consensus failed with {consensus_model}, trying next model...")
+            continue
+
+    if not consensus_generated:
+        yield _sse({"type": "consensus_chunk", "content": "[所有模型共识生成均失败，请检查 API 配置]"})
 
     yield _sse({"type": "done"})
+
+
+# ─── 追问编排 ─────────────────────────────────────────
+
+async def run_followup(
+    question: str,
+    topic: str,
+    context: str,
+    models: list[str],
+) -> AsyncGenerator[str, None]:
+    """基于完整讨论上下文，以主持人身份回答用户追问."""
+    system = _followup_system(topic, context)
+    messages = [{"role": "user", "content": question}]
+
+    for model in models:
+        try:
+            async for chunk in stream_chat(model, messages, system):
+                yield _sse({"type": "followup_chunk", "content": chunk})
+            yield _sse({"type": "followup_done"})
+            return
+        except Exception:
+            logger.warning(f"Followup failed with {model}, trying next...")
+            continue
+
+    yield _sse({"type": "followup_chunk", "content": "[追问回复生成失败，请检查 API 配置]"})
+    yield _sse({"type": "followup_done"})
