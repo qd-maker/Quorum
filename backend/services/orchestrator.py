@@ -39,15 +39,28 @@ def _get_model_identity(frontend_id: str) -> tuple[str, str]:
     return actual_name, company
 
 
+def _get_base_name(frontend_id: str) -> str:
+    """获取模型的大类名称，用于讨论中互相称呼。"""
+    mapping = {
+        "gpt-4o": "GPT",
+        "gemini-2.0-flash": "Gemini",
+        "grok-2": "Grok",
+        "deepseek-chat": "DeepSeek"
+    }
+    return mapping.get(frontend_id, frontend_id)
+
+
 def _round1_system(model: str, topic: str, search_ctx: str = "") -> str:
     name, company = _get_model_identity(model)
+    base_name = _get_base_name(model)
     now_str = get_current_datetime_str()
     search_block = f"\n\n{search_ctx}" if search_ctx else ""
     return (
-        f"你是{name}，由{company}开发。你正在参与一场多AI模型的群聊讨论。\n"
+        f"你是 {name}，由 {company} 开发。你正在参与一场多AI模型的群聊讨论。\n"
         f"当前时间：{now_str}\n"
         f"讨论议题：{topic}\n"
         f"{search_block}\n"
+        "【称呼规范】为了让讨论更加自然，请在发言时自称为「我」，称呼其他模型为「GPT」「Gemini」「Grok」或「DeepSeek」，坚决省略具体的版本号（如 4o, 1.5-pro, 2.0-flash 等）。\n"
         "讨论风格：保持你自身的特点和立场，可以与其他模型观点有分歧。\n"
         '输出要求：直接回应议题，不要说"作为一个AI我没有观点"，要有真实立场。\n'
         "若议题涉及近期事件，请结合上方搜索结果（如有）进行分析，并注明信息来源。\n"
@@ -57,17 +70,19 @@ def _round1_system(model: str, topic: str, search_ctx: str = "") -> str:
 
 def _round2_system(model: str, topic: str, others: dict[str, str]) -> str:
     name, company = _get_model_identity(model)
+    base_name = _get_base_name(model)
     now_str = get_current_datetime_str()
     other_views = "\n\n".join(
-        f"【{_get_model_identity(m)[0]}的观点】\n{text}"
+        f"【{_get_base_name(m)} 的观点】\n{text}"
         for m, text in others.items()
     )
     return (
-        f"你是{name}，由{company}开发。你正在参与一场多AI模型的群聊讨论的第二轮。\n"
+        f"你是 {name}，由 {company} 开发。你正在参与一场多AI模型的群聊讨论的第二轮。\n"
         f"当前时间：{now_str}\n"
         f"讨论议题：{topic}\n\n"
         f"以下是其他模型在第一轮的观点：\n\n{other_views}\n\n"
-        "请在回应中具体引用并评价其他模型的观点，可以认同、补充或反驳。\n"
+        "【称呼规范】在引用或评价其他模型时，一律只称呼它们的系列名称（如 GPT, Gemini, Grok, DeepSeek），坚决不要带上具体版本号（如 4o, 2.0-flash 等）。\n"
+        "请在回应中具体引用并反驳或赞同其他模型的观点。\n"
         "篇幅：200-400字。"
     )
 
@@ -76,18 +91,19 @@ def _consensus_system(topic: str, all_views: dict[str, list[str]], search_ctx: s
     now_str = get_current_datetime_str()
     views_text = ""
     for model, rounds in all_views.items():
-        name = _get_model_identity(model)[0]
+        base_name = _get_base_name(model)
         for i, text in enumerate(rounds, 1):
-            views_text += f"\n【{name} · 第{i}轮】\n{text}\n"
+            views_text += f"\n【{base_name} · 第{i}轮】\n{text}\n"
     search_block = f"\n\n{search_ctx}" if search_ctx else ""
     return (
         f"你是一位中立的讨论主持人。当前时间：{now_str}\n"
-        f"以下是多个 AI 模型关于「{topic}」的真实讨论记录：\n"
+        f"以下是各模型（GPT、Gemini、Grok、DeepSeek）关于「{topic}」的真实讨论记录：\n"
         f"{views_text}{search_block}\n\n"
         "请基于以上讨论内容，生成一份简洁的共识摘要，要求：\n"
         "1. 提炼各方真实观点中的共同认知\n"
         "2. 指出主要分歧点（如有）\n"
         "3. 给出综合结论\n\n"
+        "【称呼规范】摘要中指代具体模型时，一律只写大类名称（如：GPT认为...而Grok认为...），绝对不要出现带小版本号的名称（如 gpt-4o, gemini-2.0-flash）。\n"
         "重要：必须基于以上实际讨论内容作答，不要生成空白模板或通用结构，不要使用占位符。"
         "语气客观精炼，300字左右，用中文回复。"
     )
