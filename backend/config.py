@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""        # anon key (public, for auth validation)
     SUPABASE_SERVICE_KEY: str = ""  # service_role key (private, bypasses RLS)
 
+    # 搜索服务
+    TAVILY_API_KEY: str = ""       # Tavily 搜索 API key（DuckDuckGo 不稳定时的备用）
+
     # 模型名称映射
     MODEL_GPT: str = "gpt-4o"
     MODEL_GEMINI: str = "gemini-2.0-flash"
