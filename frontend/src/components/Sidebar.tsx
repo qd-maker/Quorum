@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Users, Trash2, Settings,
+  Users, Trash2, Settings, Search,
   PanelLeftClose, PanelLeft, Bot, MessageSquare, LogOut
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -18,16 +18,14 @@ function Logo() {
     <div className="flex items-center gap-2.5 px-2 py-1 text-text-1 cursor-pointer rounded-lg">
       <Bot size={20} strokeWidth={1.5} className="text-text-3" />
       <span className="font-semibold text-[15px] tracking-wide text-text-1">
-        Many AI
+        Quorum
       </span>
     </div>
   )
 }
 
-// ─── Model Group ─────────────────────────────────
+// ─── Constants ───────────────────────────────────
 const CHAT_MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
-
-// 模型中文分组名
 const MODEL_LABEL: Record<ModelId, string> = {
   'gpt-4o': 'GPT 对话',
   'gemini-2.0-flash': 'Gemini 对话',
@@ -35,19 +33,16 @@ const MODEL_LABEL: Record<ModelId, string> = {
   'deepseek-chat': 'DeepSeek 对话',
 }
 
+// ─── Model History Group ──────────────────────────
 function ModelHistoryGroup({
-  modelId,
-  items,
-  onDelete,
+  modelId, items, onDelete,
 }: {
   modelId: ModelId
   items: HistoryItem[]
   onDelete: (id: string) => void
 }) {
   const navigate = useNavigate()
-
   if (items.length === 0) return null
-
   return (
     <div className="mb-5">
       <div className="px-3 mb-1.5">
@@ -55,7 +50,6 @@ function ModelHistoryGroup({
           {MODEL_LABEL[modelId]}
         </h3>
       </div>
-
       <div className="space-y-0.5">
         {items.map(item => (
           <button
@@ -82,10 +76,153 @@ function ModelHistoryGroup({
   )
 }
 
-// ─── Sidebar ─────────────────────────────────────
-export default function Sidebar() {
-  const location = useLocation()
+// ─── Sidebar Nav + History (shared) ──────────────
+function SidebarInner({
+  searchQuery, setSearchQuery, chatHistory, discussHistory, totalChats, handleDelete,
+}: {
+  searchQuery: string
+  setSearchQuery: (q: string) => void
+  chatHistory: Record<string, HistoryItem[]>
+  discussHistory: HistoryItem[]
+  totalChats: number
+  handleDelete: (id: string) => void
+}) {
   const navigate = useNavigate()
+  const location = useLocation()
+  return (
+    <>
+      {/* 主导航 */}
+      <div className="space-y-0.5 mb-6">
+        <button
+          onClick={() => navigate('/chat')}
+          className={clsx(
+            'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] font-medium transition-colors duration-150',
+            location.pathname === '/chat' || location.pathname === '/'
+              ? 'bg-bg-3/80 text-text-1'
+              : 'text-text-3 hover:bg-bg-3/50 hover:text-text-1'
+          )}
+        >
+          <MessageSquare size={16} strokeWidth={1.5} />
+          <span>AI 对话</span>
+        </button>
+        <button
+          onClick={() => navigate('/discuss')}
+          className={clsx(
+            'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] font-medium transition-colors duration-150',
+            location.pathname.startsWith('/discuss')
+              ? 'bg-bg-3/80 text-text-1'
+              : 'text-text-3 hover:bg-bg-3/50 hover:text-text-1'
+          )}
+        >
+          <Users size={16} strokeWidth={1.5} />
+          <span>群聊讨论室</span>
+        </button>
+      </div>
+
+      <div className="h-px bg-white/5 mb-4 mx-1" />
+
+      {/* 搜索框 */}
+      <div className="relative mb-3 mx-1">
+        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-5" />
+        <input
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="搜索历史记录..."
+          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none focus:border-violet-500/40 transition-colors"
+        />
+      </div>
+
+      {/* 历史记录 */}
+      <div className="flex-1 min-h-0">
+        {totalChats === 0 && discussHistory.length === 0 ? (
+          <p className="text-[12px] text-text-5 px-3 py-3 text-center">暂无历史记录</p>
+        ) : (
+          CHAT_MODELS.map(m => {
+            const items = (chatHistory[m] || []).filter(item =>
+              !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            return <ModelHistoryGroup key={m} modelId={m} items={items} onDelete={handleDelete} />
+          })
+        )}
+        {discussHistory.filter(item =>
+          !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase())
+        ).length > 0 && (
+            <div className="mb-5">
+              <div className="px-3 mb-1.5">
+                <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
+              </div>
+              <div className="space-y-0.5">
+                {discussHistory
+                  .filter(item => !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => navigate(`/discuss/${item.id}`)}
+                      className="w-full text-left px-3 py-1.5 rounded-lg group transition-colors duration-150 hover:bg-bg-3/60 flex items-center justify-between"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
+                          {item.title}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 text-text-5 transition-all flex-shrink-0"
+                      >
+                        <Trash2 size={12} strokeWidth={2} />
+                      </button>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+      </div>
+    </>
+  )
+}
+
+// ─── Sidebar Footer (shared) ─────────────────────
+function SidebarFooter({
+  showSettings, setShowSettings,
+}: {
+  showSettings: boolean
+  setShowSettings: (s: boolean) => void
+}) {
+  const { user, signOut } = useAuth()
+  return (
+    <div className="px-3 pb-4 pt-2 border-t border-white/5 flex-shrink-0">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setShowSettings(true)}
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg flex-1 text-left hover:bg-bg-3/60 transition-colors group"
+        >
+          <Settings size={15} strokeWidth={1.5} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
+          <div className="flex flex-col flex-1 min-w-0">
+            <span className="text-[13.5px] font-medium text-text-2 truncate pointer-events-none">接口设置</span>
+            <span className="text-[11px] text-text-5 truncate">{user?.email || '配置 API Key'}</span>
+          </div>
+        </button>
+        <ThemeToggle />
+      </div>
+      <button
+        onClick={signOut}
+        className="mt-1 flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-text-5 hover:text-red-400 hover:bg-red-500/8 transition-colors text-[12px]"
+      >
+        <LogOut size={13} strokeWidth={1.5} />
+        退出登录
+      </button>
+    </div>
+  )
+}
+
+// ─── Sidebar ─────────────────────────────────────
+export default function Sidebar({
+  mobileSidebarOpen,
+  setMobileSidebarOpen,
+}: {
+  mobileSidebarOpen: boolean
+  setMobileSidebarOpen: (open: boolean) => void
+}) {
   const { user, signOut } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' }
@@ -94,6 +231,7 @@ export default function Sidebar() {
   const [chatHistory, setChatHistory] = useState<Record<string, HistoryItem[]>>({})
   const [discussHistory, setDiscussHistory] = useState<HistoryItem[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const toggleSidebar = () => {
     const next = !collapsed
@@ -159,11 +297,41 @@ export default function Sidebar() {
 
   const totalChats = Object.values(chatHistory).reduce((a, b) => a + b.length, 0)
 
+  const innerProps = {
+    searchQuery, setSearchQuery,
+    chatHistory, discussHistory,
+    totalChats, handleDelete,
+  }
+
   return (
     <>
-      {/* ── 侧边栏主体：用 max-width + opacity 联动，过渡更顺滑 ── */}
+      {/* ── 移动端侧边栏：固定覆盖抽屉 ── */}
       <aside
-        className="flex flex-col bg-bg-1 flex-shrink-0 relative group/sidebar overflow-hidden"
+        className={clsx(
+          'md:hidden fixed inset-y-0 left-0 z-50 w-[280px] bg-bg-1 flex flex-col',
+          'transition-transform duration-300 ease-in-out',
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <div className="flex-1 overflow-y-auto flex flex-col pt-3 pb-2 px-3">
+          <div className="flex items-center justify-between mb-4 select-none">
+            <Logo />
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3/60 transition-colors"
+              title="关闭侧边栏"
+            >
+              <PanelLeftClose size={17} strokeWidth={1.5} />
+            </button>
+          </div>
+          <SidebarInner {...innerProps} />
+        </div>
+        <SidebarFooter showSettings={showSettings} setShowSettings={setShowSettings} />
+      </aside>
+
+      {/* ── 桌面端侧边栏：max-width + opacity 联动 ── */}
+      <aside
+        className="hidden md:flex flex-col bg-bg-1 flex-shrink-0 relative group/sidebar overflow-hidden"
         style={{
           maxWidth: collapsed ? 0 : 260,
           opacity: collapsed ? 0 : 1,
@@ -172,7 +340,6 @@ export default function Sidebar() {
         }}
       >
         <div className="flex-1 overflow-y-auto w-[260px] flex flex-col pt-3 pb-2 px-3">
-          {/* ── 顶部标题栏 ── */}
           <div className="flex items-center justify-between mb-4 select-none">
             <Logo />
             <button
@@ -183,116 +350,14 @@ export default function Sidebar() {
               <PanelLeftClose size={17} strokeWidth={1.5} />
             </button>
           </div>
-
-          {/* ── 主导航 ── */}
-          <div className="space-y-0.5 mb-6">
-            <button
-              onClick={() => navigate('/chat')}
-              className={clsx(
-                'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] font-medium transition-colors duration-150',
-                location.pathname === '/chat' || location.pathname === '/'
-                  ? 'bg-bg-3/80 text-text-1'
-                  : 'text-text-3 hover:bg-bg-3/50 hover:text-text-1'
-              )}
-            >
-              <MessageSquare size={16} strokeWidth={1.5} />
-              <span>AI 对话</span>
-            </button>
-
-            <button
-              onClick={() => navigate('/discuss')}
-              className={clsx(
-                'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] font-medium transition-colors duration-150',
-                location.pathname.startsWith('/discuss')
-                  ? 'bg-bg-3/80 text-text-1'
-                  : 'text-text-3 hover:bg-bg-3/50 hover:text-text-1'
-              )}
-            >
-              <Users size={16} strokeWidth={1.5} />
-              <span>群聊讨论室</span>
-            </button>
-          </div>
-
-          {/* ── 分割线 ── */}
-          <div className="h-px bg-white/5 mb-4 mx-1" />
-
-          {/* ── 历史记录 ── */}
-          <div className="flex-1 min-h-0">
-            {totalChats === 0 && discussHistory.length === 0 ? (
-              <p className="text-[12px] text-text-5 px-3 py-3 text-center">
-                暂无历史记录
-              </p>
-            ) : (
-              CHAT_MODELS.map(m => (
-                <ModelHistoryGroup
-                  key={m}
-                  modelId={m}
-                  items={chatHistory[m] || []}
-                  onDelete={handleDelete}
-                />
-              ))
-            )}
-
-            {/* ── 讨论历史 ── */}
-            {discussHistory.length > 0 && (
-              <div className="mb-5">
-                <div className="px-3 mb-1.5">
-                  <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
-                </div>
-                <div className="space-y-0.5">
-                  {discussHistory.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => navigate(`/discuss/${item.id}`)}
-                      className="w-full text-left px-3 py-1.5 rounded-lg group transition-colors duration-150 hover:bg-bg-3/60 flex items-center justify-between"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
-                          {item.title}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 text-text-5 transition-all flex-shrink-0"
-                      >
-                        <Trash2 size={12} strokeWidth={2} />
-                      </button>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <SidebarInner {...innerProps} />
         </div>
-
-        {/* ── 底部设置 ── */}
-        <div className="px-3 pb-4 pt-2 w-[260px] border-t border-white/5">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg flex-1 text-left hover:bg-bg-3/60 transition-colors group"
-            >
-              <Settings size={15} strokeWidth={1.5} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-[13.5px] font-medium text-text-2 truncate pointer-events-none">接口设置</span>
-                <span className="text-[11px] text-text-5 truncate">{user?.email || '配置 API Key'}</span>
-              </div>
-            </button>
-            <ThemeToggle />
-          </div>
-          <button
-            onClick={signOut}
-            className="mt-1 flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-text-5 hover:text-red-400 hover:bg-red-500/8 transition-colors text-[12px]"
-          >
-            <LogOut size={13} strokeWidth={1.5} />
-            退出登录
-          </button>
-        </div>
+        <SidebarFooter showSettings={showSettings} setShowSettings={setShowSettings} />
       </aside>
 
-      {/* ── 展开按钮：用 max-width 同步过渡，避免闪烁 ── */}
+      {/* ── 桌面端展开按钮 ── */}
       <div
-        className="flex-shrink-0 flex items-start pt-[11px]"
+        className="hidden md:flex flex-shrink-0 items-start pt-[11px]"
         style={{
           maxWidth: collapsed ? 44 : 0,
           opacity: collapsed ? 1 : 0,

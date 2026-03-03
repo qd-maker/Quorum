@@ -1,18 +1,24 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Users, Sparkles, ArrowRight, RotateCcw, Trash2, Square } from 'lucide-react'
+import { Users, Sparkles, ArrowRight, RotateCcw, Trash2, Square, Paperclip, X, FileText, ImageIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, DiscussMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
 import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import ConsensusCard from '../components/ConsensusCard'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { apiFetch } from '../lib/api'
 
 // ─── Types ───────────────────────────────────────
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
 const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
+
+// ─── Allowed file types ───────────────────────────────
+const TEXT_EXTS = ['txt', 'md', 'py', 'js', 'ts', 'jsx', 'tsx', 'json', 'csv',
+  'xml', 'yaml', 'yml', 'html', 'css', 'sh', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h']
+const MAX_TEXT_MB = 2
 
 // ─── Participant Card ─────────────────────────────
 function ParticipantCard({
@@ -87,20 +93,12 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
           <span className="text-xs font-semibold" style={{ color: meta.color }}>{getModelDisplayName(msg.model)}</span>
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed prose-dark', borderMap[msg.model])}>
-          {msg.content.split('\n').map((line, i) => {
-            if (line.startsWith('**') && line.endsWith('**')) {
-              return <p key={i} className="font-semibold text-text-1 mt-2 first:mt-0">{line.slice(2, -2)}</p>
-            }
-            if (line.startsWith('**') && line.includes('**：')) {
-              const [bold, rest] = line.split('**：')
-              return <p key={i}><strong className="text-text-1">{bold.slice(2)}</strong>：{rest}</p>
-            }
-            return line ? <p key={i}>{line}</p> : <div key={i} className="h-1" />
-          })}
-          {msg.isStreaming && (
-            <span className="inline-block w-0.5 h-4 ml-0.5 rounded-full animate-pulse" style={{ background: meta.color }} />
-          )}
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed', borderMap[msg.model])}>
+          <MarkdownRenderer
+            content={msg.content}
+            isStreaming={!!msg.isStreaming}
+            accentColor={meta.color}
+          />
         </div>
       </div>
     </div>
@@ -111,12 +109,47 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
 function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: string) => void; onLoad: (id: string) => void; onDelete?: (id: string) => void }) {
   const [topic, setTopic] = useState('')
   const [history, setHistory] = useState<{ id: string; title: string; preview: string; createdAt: string }[]>([])
+  const [attachment, setAttachment] = useState<{ name: string; content: string } | null>(null)
+  const [fileError, setFileError] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const suggestions = [
     'AI会在5年内取代大多数程序员吗？',
     '创业公司应该选择微服务还是单体架构？',
     'Web3和区块链的未来还有多大空间？',
     '远程工作是否会永久改变工作文化？',
   ]
+
+  const processFile = useCallback((file: File) => {
+    setFileError('')
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const sizeMB = file.size / 1024 / 1024
+    if (TEXT_EXTS.includes(ext)) {
+      if (sizeMB > MAX_TEXT_MB) { setFileError(`文件不能超过 ${MAX_TEXT_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setAttachment({ name: file.name, content: e.target!.result as string })
+      }
+      reader.readAsText(file, 'utf-8')
+    } else if (ext === 'pdf') {
+      setFileError('PDF 暂不支持，请将内容复制粘贴后发送')
+    } else if (file.type.startsWith('image/')) {
+      setFileError('讨论室暂不支持图片附件，请在单模型对话中使用')
+    } else {
+      setFileError(`不支持的文件类型：.${ext}`)
+    }
+  }, [])
+
+  const handleStart = () => {
+    const t = topic.trim()
+    if (!t && !attachment) return
+    let finalTopic = t
+    if (attachment) {
+      const fileContext = `\`\`\`${attachment.name}\n${attachment.content}\n\`\`\``
+      finalTopic = t ? `${fileContext}\n\n${t}` : `请分析以下文件内容：\n\n${fileContext}`
+    }
+    onStart(finalTopic)
+  }
 
   useEffect(() => {
     apiFetch('/api/sessions?limit=20')
@@ -135,8 +168,25 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
       .catch(() => { })
   }, [])
 
+  const canStart = topic.trim().length > 0 || attachment !== null
+
   return (
-    <div className="flex flex-col items-center h-full px-6 pt-12 overflow-y-auto">
+    <div
+      className="flex flex-col items-center h-full px-4 sm:px-6 pt-8 sm:pt-12 overflow-y-auto"
+      onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) processFile(f) }}
+    >
+      {/* 拖拽遮罩 */}
+      {isDragging && (
+        <div className="fixed inset-0 z-50 bg-violet-500/10 border-2 border-dashed border-violet-400/50 rounded-2xl flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <FileText size={32} className="mx-auto mb-2 text-violet-400" />
+            <p className="text-violet-300 font-medium">松开以上传文件</p>
+          </div>
+        </div>
+      )}
+
       {/* Hero */}
       <div className="mb-6 text-center">
         <div className="w-16 h-16 mx-auto mb-4 rounded-2xl border-gradient-gemini flex items-center justify-center relative">
@@ -153,23 +203,51 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
 
       {/* Input area */}
       <div className="w-full max-w-xl mb-6">
+        {/* 附件预览 */}
+        {attachment && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-bg-3 border border-white/8 rounded-xl">
+            <FileText size={16} className="text-violet-400 flex-shrink-0" />
+            <span className="text-xs text-text-3 flex-1 truncate">{attachment.name}</span>
+            <button onClick={() => setAttachment(null)} className="text-text-5 hover:text-red-400 transition-colors">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {fileError && <p className="text-xs text-red-400 mb-2 px-1">{fileError}</p>}
+
         <div className="relative bg-bg-3 border border-white/10 rounded-2xl p-1 input-glow transition-all">
           <textarea
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && topic.trim()) { e.preventDefault(); onStart(topic.trim()) } }}
-            placeholder="+ 输入讨论议题..."
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && canStart) { e.preventDefault(); handleStart() } }}
+            placeholder="+ 输入讨论议题，或拖拽文件到此处..."
             rows={1}
             className="w-full bg-transparent text-sm text-text-1 placeholder:text-text-5 px-4 pt-3 pb-2 resize-none outline-none leading-relaxed"
           />
           <div className="flex items-center justify-between px-3 pb-2">
-            <span className="text-xs text-text-5">Enter 开始讨论</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+                title="上传文本文件作为讨论素材"
+              >
+                <Paperclip size={14} strokeWidth={1.8} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept=".txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.xml,.yaml,.yml,.html,.css,.sh,.sql,.rs,.go,.java,.c,.cpp,.h"
+                onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = '' }}
+              />
+              <span className="text-xs text-text-5">Enter 开始讨论</span>
+            </div>
             <button
-              onClick={() => topic.trim() && onStart(topic.trim())}
-              disabled={!topic.trim()}
+              onClick={handleStart}
+              disabled={!canStart}
               className={clsx(
                 'flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all',
-                topic.trim()
+                canStart
                   ? 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 shadow-gemini'
                   : 'bg-bg-5 text-text-5 cursor-not-allowed'
               )}
@@ -516,7 +594,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   return (
     <div className="flex flex-col h-full bg-bg-2">
       {/* Header */}
-      <header className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0">
+      <header className="flex items-center justify-between pl-12 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/30 flex items-center justify-center flex-shrink-0">
             <Users size={14} className="text-violet-300" />

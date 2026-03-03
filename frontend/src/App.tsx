@@ -1,5 +1,6 @@
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import ChatPage from './pages/ChatPage'
@@ -11,12 +12,17 @@ function AppContent() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, loading } = useAuth()
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (location.pathname === '/') navigate('/chat', { replace: true })
   }, [location.pathname, navigate])
 
-  // 加载中：防止未初始化时闪烁
+  // 路由变化时关闭移动端侧边栏
+  useEffect(() => {
+    setMobileSidebarOpen(false)
+  }, [location.pathname])
+
   if (loading) {
     return (
       <div className="flex h-screen bg-bg-0 items-center justify-center">
@@ -25,7 +31,6 @@ function AppContent() {
     )
   }
 
-  // 未登录：显示登录页
   if (!user) {
     return <AuthPage />
   }
@@ -42,8 +47,25 @@ function AppContent() {
 
   return (
     <div className="flex h-screen bg-bg-0 overflow-hidden">
-      <Sidebar />
+      {/* 移动端侧边栏背景遮罩 */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar mobileSidebarOpen={mobileSidebarOpen} setMobileSidebarOpen={setMobileSidebarOpen} />
+
       <main className="flex-1 min-w-0 overflow-hidden relative">
+        {/* 移动端汉堡菜单 */}
+        <button
+          onClick={() => setMobileSidebarOpen(true)}
+          className="fixed top-3 left-3 z-30 p-2 rounded-xl bg-bg-2/80 backdrop-blur-sm border border-white/8 text-text-3 hover:text-text-1 transition-colors md:hidden"
+        >
+          <Menu size={18} />
+        </button>
+
         {/* Chat */}
         <div
           className="absolute inset-0 flex flex-col"

@@ -1,13 +1,29 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
-import { Send, ChevronDown, Square } from 'lucide-react'
+import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, ChatMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
 import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { apiFetch } from '../lib/api'
 
-// ─── Model Selector ───────────────────────────────
+// ─── Types ───────────────────────────────────────────
+interface Attachment {
+  type: 'image' | 'text'
+  data: string   // base64 data URL for images, plain text for text files
+  name: string
+  mimeType: string
+}
+
+// ─── Allowed file types ───────────────────────────────
+const TEXT_EXTS = ['txt', 'md', 'py', 'js', 'ts', 'jsx', 'tsx', 'json', 'csv',
+  'xml', 'yaml', 'yml', 'html', 'css', 'sh', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h']
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']
+const MAX_IMAGE_MB = 10
+const MAX_TEXT_MB = 2
+
+// ─── Model Selector ───────────────────────────────────
 const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
 
 function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m: ModelId) => void }) {
@@ -50,18 +66,38 @@ function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m
   )
 }
 
-// ─── User bubble ──────────────────────────────────
-function UserMessage({ content }: { content: string }) {
+// ─── User bubble ──────────────────────────────────────
+function UserMessage({ content, attachment }: { content: string; attachment?: Attachment }) {
   return (
     <div className="flex justify-end animate-fade-in-up" style={{ opacity: 0 }}>
-      <div className="max-w-[75%] px-4 py-3 bg-bg-4 border border-white/8 rounded-2xl rounded-br-sm text-sm text-text-2 leading-relaxed">
-        {content}
+      <div className="max-w-[75%] flex flex-col gap-2 items-end">
+        {/* 附件预览 */}
+        {attachment && (
+          attachment.type === 'image' ? (
+            <img
+              src={attachment.data}
+              alt={attachment.name}
+              className="max-w-xs max-h-64 rounded-xl border border-white/10 object-cover"
+            />
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 bg-bg-4/60 border border-white/8 rounded-xl">
+              <FileText size={14} className="text-violet-400 flex-shrink-0" />
+              <span className="text-xs text-text-3 truncate max-w-[180px]">{attachment.name}</span>
+            </div>
+          )
+        )}
+        {/* 文字内容 */}
+        {content && (
+          <div className="px-4 py-3 bg-bg-4 border border-white/8 rounded-2xl rounded-br-sm text-sm text-text-2 leading-relaxed">
+            {content}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ─── Assistant bubble ─────────────────────────────
+// ─── Assistant bubble ─────────────────────────────────
 function AssistantMessage({ msg }: { msg: ChatMessage & { isStreaming?: boolean } }) {
   const meta = MODEL_META[msg.model!]
   const bubbleMap: Record<ModelId, string> = {
@@ -78,26 +114,19 @@ function AssistantMessage({ msg }: { msg: ChatMessage & { isStreaming?: boolean 
           <span className="text-xs font-semibold" style={{ color: meta.color }}>{meta.shortName}</span>
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed prose-dark', bubbleMap[msg.model!])}>
-          {msg.content.split('\n').map((line, i) => {
-            if (line.startsWith('**') && line.endsWith('**')) {
-              return <p key={i} className="font-semibold text-text-1">{line.slice(2, -2)}</p>
-            }
-            if (line.match(/^- /)) {
-              return <p key={i} className="pl-2">• {line.slice(2)}</p>
-            }
-            return line ? <p key={i}>{line}</p> : <br key={i} />
-          })}
-          {(msg as any).isStreaming && (
-            <span className="inline-block w-0.5 h-4 ml-0.5 rounded-full animate-pulse" style={{ background: meta.color }} />
-          )}
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed', bubbleMap[msg.model!])}>
+          <MarkdownRenderer
+            content={msg.content}
+            isStreaming={!!msg.isStreaming}
+            accentColor={meta.color}
+          />
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Empty state ──────────────────────────────────
+// ─── Empty state ──────────────────────────────────────
 function EmptyState({ model, onSend }: { model: ModelId; onSend: (text: string) => void }) {
   const meta = MODEL_META[model]
   return (
@@ -123,18 +152,22 @@ function EmptyState({ model, onSend }: { model: ModelId; onSend: (text: string) 
   )
 }
 
-// ─── ChatPage ─────────────────────────────────────
+// ─── ChatPage ─────────────────────────────────────────
 export default function ChatPage({ active, sessionId }: { active: boolean; sessionId?: string }) {
   const [model, setModel] = useState<ModelId>('gpt-4o')
-  const [messages, setMessages] = useState<(ChatMessage & { isStreaming?: boolean })[]>([])
+  const [messages, setMessages] = useState<(ChatMessage & { isStreaming?: boolean; attachment?: Attachment })[]>([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [attachment, setAttachment] = useState<Attachment | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [fileError, setFileError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<(ChatMessage & { isStreaming?: boolean })[]>([])
   const modelRef = useRef<ModelId>(model)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [, forceUpdate] = useReducer(x => x + 1, 0)
 
   // Re-render when API config changes (model names)
@@ -159,40 +192,24 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  // 加载历史会话（仅在 active 且 sessionId 变化时触发）
+  // 加载历史会话
   useEffect(() => {
-    if (!active) return  // 页面隐藏时不加载，防止打断当前流
+    if (!active) return
     if (!sessionId) {
-      // 只有当 sessionIdRef 非空时才重置（避免新对话时清空当前消息）
       if (sessionIdRef.current !== null) {
-        // 切换到新对话：中止正在进行的流
-        if (abortRef.current) {
-          abortRef.current.abort()
-          abortRef.current = null
-        }
-        setIsTyping(false)
-        setIsStreaming(false)
+        if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
+        setIsTyping(false); setIsStreaming(false)
         updateMessages(() => [])
         sessionIdRef.current = null
       }
       return
     }
-    if (sessionIdRef.current === sessionId) return  // 已加载，跳过
-
-    // ⚠️ 切换到历史会话：立即中止当前流，防止旧响应污染新会话
-    if (abortRef.current) {
-      abortRef.current.abort()
-      abortRef.current = null
-    }
-    setIsTyping(false)
-    setIsStreaming(false)
-
+    if (sessionIdRef.current === sessionId) return
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
+    setIsTyping(false); setIsStreaming(false)
     sessionIdRef.current = sessionId
     apiFetch(`/api/sessions/${sessionId}`)
-      .then(r => {
-        if (!r.ok) throw new Error('not found')
-        return r.json()
-      })
+      .then(r => { if (!r.ok) throw new Error('not found'); return r.json() })
       .then(data => {
         if (data.model) setModel(data.model as ModelId)
         const msgs = (data.messages || []).map((m: any, i: number) => ({
@@ -205,23 +222,61 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         }))
         updateMessages(() => msgs)
       })
-      .catch(() => {
-        sessionIdRef.current = null
-      })
+      .catch(() => { sessionIdRef.current = null })
   }, [active, sessionId])
 
-  // 保存会话到 Supabase（PUT 全量替换，避免重复）
+  // ─── 文件处理 ──────────────────────────────────────
+  const processFile = useCallback((file: File) => {
+    setFileError('')
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const sizeMB = file.size / 1024 / 1024
+
+    if (IMAGE_TYPES.includes(file.type)) {
+      if (sizeMB > MAX_IMAGE_MB) { setFileError(`图片不能超过 ${MAX_IMAGE_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setAttachment({ type: 'image', data: e.target!.result as string, name: file.name, mimeType: file.type })
+      }
+      reader.readAsDataURL(file)
+    } else if (TEXT_EXTS.includes(ext)) {
+      if (sizeMB > MAX_TEXT_MB) { setFileError(`文本文件不能超过 ${MAX_TEXT_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setAttachment({ type: 'text', data: e.target!.result as string, name: file.name, mimeType: 'text/plain' })
+      }
+      reader.readAsText(file, 'utf-8')
+    } else if (ext === 'pdf') {
+      setFileError('PDF 暂不支持，请将内容复制粘贴后发送')
+    } else {
+      setFileError(`不支持的文件类型：.${ext}`)
+    }
+  }, [])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) processFile(file)
+    e.target.value = ''  // reset so same file can be re-selected
+  }
+
+  // 拖拽支持
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }
+  const handleDragLeave = () => setIsDragging(false)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) processFile(file)
+  }
+
+  // ─── 保存会话 ──────────────────────────────────────
   const saveSession = useCallback(async () => {
     try {
       const allMsgs = messagesRef.current
       if (allMsgs.length === 0) return
-
       const currentModel = modelRef.current
       const userMsgs = allMsgs.filter(m => m.role === 'user')
       const title = userMsgs[0]?.content?.slice(0, 50) || '新对话'
       const lastAi = allMsgs.filter(m => m.role === 'assistant').pop()
       const preview = lastAi?.content?.slice(0, 80) || ''
-
       if (!sessionIdRef.current) {
         const res = await apiFetch('/api/sessions', {
           method: 'POST',
@@ -238,39 +293,57 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           body: JSON.stringify({ title, preview }),
         })
       }
-
-      // PUT 全量替换所有消息，避免重复
-      const allPayload = allMsgs.map(m => ({
-        role: m.role, content: m.content, model: m.model || undefined,
-      }))
+      const allPayload = allMsgs.map(m => ({ role: m.role, content: m.content, model: m.model || undefined }))
       await apiFetch(`/api/sessions/${sessionIdRef.current}/messages`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: allPayload }),
       })
-
       window.dispatchEvent(new Event('history-updated'))
-    } catch (e) {
-      console.error('Save session failed:', e)
-    }
+    } catch (e) { console.error('Save session failed:', e) }
   }, [])
 
-  // 中断流式输出
   const handleStop = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort()
-      abortRef.current = null
-    }
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
   }, [])
 
+  // ─── 发送消息 ──────────────────────────────────────
   const handleSend = async (overrideText?: string) => {
-    const content = (overrideText ?? input).trim()
-    if (!content || isTyping || isStreaming) return
-    const userMsg: ChatMessage = {
+    const textContent = (overrideText ?? input).trim()
+    if ((!textContent && !attachment) || isTyping || isStreaming) return
+
+    // 构建 API message content
+    let apiContent: string | any[]
+    let displayContent = textContent
+
+    if (attachment?.type === 'image') {
+      // Vision 格式
+      apiContent = [
+        ...(textContent ? [{ type: 'text', text: textContent }] : []),
+        { type: 'image_url', image_url: { url: attachment.data } },
+      ]
+      displayContent = textContent
+    } else if (attachment?.type === 'text') {
+      // 将文件内容作为上下文前置
+      const fileContext = `\`\`\`${attachment.name}\n${attachment.data}\n\`\`\``
+      apiContent = textContent
+        ? `${fileContext}\n\n${textContent}`
+        : fileContext
+      displayContent = textContent || `（附件：${attachment.name}）`
+    } else {
+      apiContent = textContent
+    }
+
+    const currentAttachment = attachment
+    setAttachment(null)
+    setFileError('')
+
+    const userMsg = {
       id: Date.now().toString(),
-      role: 'user',
-      content,
+      role: 'user' as const,
+      content: displayContent,
       timestamp: Date.now(),
+      attachment: currentAttachment || undefined,
     }
     const updatedMessages = [...messages, userMsg]
     updateMessages(() => updatedMessages)
@@ -278,12 +351,11 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     setIsTyping(true)
 
     const aiId = (Date.now() + 1).toString()
-
-    // 构造发送给后端的 messages（去掉前端专属字段）
-    const apiMessages = updatedMessages.map(m => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const apiMessages = updatedMessages.map((m, i) =>
+      i === updatedMessages.length - 1
+        ? { role: m.role, content: apiContent }   // 最后一条用带附件的 content
+        : { role: m.role, content: m.content }
+    )
 
     try {
       abortRef.current = new AbortController()
@@ -293,12 +365,8 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         body: JSON.stringify({ model, messages: apiMessages, stream: true }),
         signal: abortRef.current.signal,
       })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-
-      // 创建 AI 消息占位
       const aiMsg: ChatMessage & { isStreaming: boolean } = {
         id: aiId, role: 'assistant', content: '', model, timestamp: Date.now(), isStreaming: true,
       }
@@ -306,19 +374,15 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       setIsTyping(false)
       setIsStreaming(true)
 
-      // 流式读取 SSE
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
-
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const payload = line.slice(6).trim()
@@ -326,34 +390,22 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           try {
             const data = JSON.parse(payload)
             if (data.content) {
-              updateMessages(prev =>
-                prev.map(m => m.id === aiId ? { ...m, content: m.content + data.content } : m)
-              )
+              updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + data.content } : m))
             }
             if (data.error) {
-              updateMessages(prev =>
-                prev.map(m => m.id === aiId ? { ...m, content: m.content + `\n\n❌ ${data.error}`, isStreaming: false } : m)
-              )
+              updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + `\n\n❌ ${data.error}`, isStreaming: false } : m))
               return
             }
-          } catch { /* skip malformed */ }
+          } catch { /* skip */ }
         }
       }
-
-      // 标记流结束并保存
-      updateMessages(prev =>
-        prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m)
-      )
+      updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m))
       setIsStreaming(false)
-      // 使用 setTimeout 确保 messagesRef 已更新
       setTimeout(() => saveSession(), 50)
     } catch (err: any) {
       setIsStreaming(false)
       if (err.name === 'AbortError') {
-        // 中断后保留已接收的内容，标记流结束
-        updateMessages(prev =>
-          prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m)
-        )
+        updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m))
         setTimeout(() => saveSession(), 50)
         return
       }
@@ -364,10 +416,27 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     }
   }
 
+  const canSend = (input.trim().length > 0 || attachment !== null) && !isTyping && !isStreaming
+
   return (
-    <div className="flex flex-col h-full bg-bg-2">
+    <div
+      className="flex flex-col h-full bg-bg-2"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 拖拽遮罩 */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-violet-500/10 border-2 border-dashed border-violet-400/50 rounded-2xl flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <ImageIcon size={32} className="mx-auto mb-2 text-violet-400" />
+            <p className="text-violet-300 font-medium">松开以上传文件</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <header className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0">
+      <header className="flex items-center justify-between pl-12 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0">
         <ModelSelector selected={model} onChange={m => {
           setModel(m)
           updateMessages(() => [])
@@ -384,7 +453,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           <div className="max-w-3xl mx-auto px-5 py-6 space-y-5">
             {messages.map(msg =>
               msg.role === 'user'
-                ? <UserMessage key={msg.id} content={msg.content} />
+                ? <UserMessage key={msg.id} content={msg.content} attachment={(msg as any).attachment} />
                 : <AssistantMessage key={msg.id} msg={msg} />
             )}
             {isTyping && <TypingIndicator modelId={model} />}
@@ -396,16 +465,62 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       {/* Input */}
       <div className="flex-shrink-0 px-5 py-4 bg-bg-2/80 backdrop-blur-sm border-t border-white/5">
         <div className="max-w-3xl mx-auto">
-          <div className="relative flex items-end gap-3 bg-bg-3 border border-white/8 rounded-2xl px-4 py-3 input-glow transition-all">
+
+          {/* 附件预览条 */}
+          {attachment && (
+            <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-bg-3 border border-white/8 rounded-xl">
+              {attachment.type === 'image' ? (
+                <>
+                  <img src={attachment.data} alt={attachment.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                  <span className="text-xs text-text-3 flex-1 truncate">{attachment.name}</span>
+                </>
+              ) : (
+                <>
+                  <FileText size={16} className="text-violet-400 flex-shrink-0" />
+                  <span className="text-xs text-text-3 flex-1 truncate">{attachment.name}</span>
+                </>
+              )}
+              <button onClick={() => setAttachment(null)} className="text-text-5 hover:text-red-400 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* 错误提示 */}
+          {fileError && (
+            <p className="text-xs text-red-400 mb-2 px-1">{fileError}</p>
+          )}
+
+          <div className={clsx(
+            'relative flex items-end gap-3 bg-bg-3 border rounded-2xl px-4 py-3 input-glow transition-all',
+            isDragging ? 'border-violet-400/50' : 'border-white/8'
+          )}>
+            {/* 附件按钮 */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 mb-0.5"
+              title="上传文件或图片"
+            >
+              <Paperclip size={16} strokeWidth={1.8} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/*,.txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.xml,.yaml,.yml,.html,.css,.sh,.sql,.rs,.go,.java,.c,.cpp,.h"
+              onChange={handleFileChange}
+            />
+
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-              placeholder={`向 ${getModelDisplayName(model)} 提问...`}
+              placeholder={`向 ${getModelDisplayName(model)} 提问，或拖拽文件到此处...`}
               rows={1}
               className="flex-1 bg-transparent text-sm text-text-1 placeholder:text-text-5 resize-none outline-none leading-relaxed max-h-32 overflow-y-auto"
               style={{ minHeight: '22px' }}
             />
+
             {isStreaming ? (
               <button
                 onClick={handleStop}
@@ -417,10 +532,10 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             ) : (
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || isTyping}
+                disabled={!canSend}
                 className={clsx(
                   'w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0',
-                  input.trim() && !isTyping
+                  canSend
                     ? 'bg-violet-500 hover:bg-violet-400 text-white shadow-gemini'
                     : 'bg-bg-5 text-text-5 cursor-not-allowed'
                 )}
@@ -429,7 +544,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
               </button>
             )}
           </div>
-          <p className="text-center text-xs text-text-5 mt-2">Enter 发送 · Shift+Enter 换行</p>
+          <p className="text-center text-xs text-text-5 mt-2">Enter 发送 · Shift+Enter 换行 · 支持拖拽上传图片 / 文本文件</p>
         </div>
       </div>
     </div>
