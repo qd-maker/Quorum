@@ -1,11 +1,13 @@
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
-import ChatPage from './pages/ChatPage'
-import DiscussPage from './pages/DiscussPage'
 import AuthPage from './pages/AuthPage'
+
+// 路由级懒加载 — 减小首屏 bundle 体积
+const ChatPage = lazy(() => import('./pages/ChatPage'))
+const DiscussPage = lazy(() => import('./pages/DiscussPage'))
 
 // ─── Keep-Alive Layout ───────────────────────────
 function AppContent() {
@@ -66,21 +68,28 @@ function AppContent() {
           <Menu size={18} />
         </button>
 
-        {/* Chat */}
-        <div
-          className="absolute inset-0 flex flex-col"
-          style={{ display: isChat ? 'flex' : 'none' }}
-        >
-          <ChatPage active={isChat} sessionId={chatSessionId} />
-        </div>
+        {/* Chat + Discuss — Suspense 包裹懒加载组件 */}
+        <Suspense fallback={
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-violet-500/40 border-t-violet-400 animate-spin" />
+          </div>
+        }>
+          {/* Chat */}
+          <div
+            className="absolute inset-0 flex flex-col"
+            style={{ display: isChat ? 'flex' : 'none' }}
+          >
+            <ChatPage active={isChat} sessionId={chatSessionId} />
+          </div>
 
-        {/* Discuss */}
-        <div
-          className="absolute inset-0 flex flex-col"
-          style={{ display: isDiscuss ? 'flex' : 'none' }}
-        >
-          <DiscussPage active={isDiscuss} sessionId={discussSessionId} />
-        </div>
+          {/* Discuss */}
+          <div
+            className="absolute inset-0 flex flex-col"
+            style={{ display: isDiscuss ? 'flex' : 'none' }}
+          >
+            <DiscussPage active={isDiscuss} sessionId={discussSessionId} />
+          </div>
+        </Suspense>
       </main>
     </div>
   )

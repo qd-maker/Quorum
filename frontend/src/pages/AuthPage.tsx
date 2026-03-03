@@ -26,10 +26,16 @@ export default function AuthPage() {
                 if (error) throw error
                 // AuthContext 会自动检测到登录并切换视图
             } else {
-                const { error } = await supabase.auth.signUp({ email, password })
+                const { data, error } = await supabase.auth.signUp({ email, password })
                 if (error) throw error
-                setSuccess('注册成功！请检查邮箱确认，或直接登录。')
-                setMode('login')
+                if (data.session) {
+                    // Supabase 已开启自动确认，直接登录成功（AuthContext 会自动切换页面）
+                    setSuccess('注册成功，已自动登录！')
+                } else {
+                    // 需要邮件确认
+                    setSuccess('注册成功！请检查邮箱，点击确认链接后即可登录。')
+                    setMode('login')
+                }
             }
         } catch (err: any) {
             const msg = err?.message || '操作失败，请重试'
@@ -56,7 +62,7 @@ export default function AuthPage() {
                     <div className="w-12 h-12 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-500/20 to-cyan-500/20 border border-violet-500/20 flex items-center justify-center">
                         <Bot size={22} strokeWidth={1.5} className="text-violet-300" />
                     </div>
-                    <h1 className="font-display text-2xl font-bold text-text-1 mb-1">Many AI</h1>
+                    <h1 className="font-display text-2xl font-bold text-text-1 mb-1">Quorum</h1>
                     <p className="text-sm text-text-4">多模型 AI 对话平台</p>
                 </div>
 
