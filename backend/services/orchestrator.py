@@ -1,0 +1,191 @@
+"""群聊讨论编排器 — Round 1 并行 → Round 2 串行 → 共识生成.
+
+通过 asyncio.Queue 保证并行推送的 SSE 事件有序。
+"""
+
+import asyncio
+import json
+import logging
+import time
+from collections.abc import AsyncGenerator
+
+from services.model_service import stream_chat, MODEL_NAME_MAP
+
+logger = logging.getLogger(__name__)
+
+# ─── System Prompt 模板 ───────────────────────────────
+
+# 前端 ID → 公司（固定，不随模型版本变化）
+_PROVIDER = {
+    "gpt-4o": "OpenAI",
+    "gemini-2.0-flash": "Google",
+    "grok-2": "xAI",
+    "deepseek-chat": "DeepSeek",
+}
+
+
+def _get_model_identity(frontend_id: str) -> tuple[str, str]:
+    """动态返回模型名称和公司。
+    名称从 MODEL_NAME_MAP 读取（跟随用户设置），公司固定。
+    """
+    actual_name = MODEL_NAME_MAP.get(frontend_id, frontend_id)
+    company = _PROVIDER.get(frontend_id, "Unknown")
+    return actual_name, company
+
+
+def _round1_system(model: str, topic: str) -> str:
+    name, company = _get_model_identity(model)
+    return (
+        f"你是{name}，由{company}开发。你正在参与一场多AI模型的群聊讨论。\n"
+        f"讨论议题：{topic}\n\n"
+        "讨论风格：保持你自身的特点和立场，可以与其他模型观点有分歧。\n"
+        '输出要求：直接回应议题，不要说"作为一个AI我没有观点"，要有真实立场。\n'
+        "篇幅：200-400字，观点鲜明，结构清晰。"
+    )
+
+
+def _round2_system(model: str, topic: str, others: dict[str, str]) -> str:
+    name, company = _get_model_identity(model)
+    other_views = "\n\n".join(
+        f"【{_get_model_identity(m)[0]}的观点】\n{text}"
+        for m, text in others.items()
+    )
+    return (
+        f"你是{name}，由{company}开发。你正在参与一场多AI模型的群聊讨论的第二轮。\n"
+        f"讨论议题：{topic}\n\n"
+        f"以下是其他模型在第一轮的观点：\n\n{other_views}\n\n"
+        "请在回应中具体引用并评价其他模型的观点，可以认同、补充或反驳。\n"
+        "篇幅：200-400字。"
+    )
+
+
+def _consensus_system(topic: str, all_views: dict[str, list[str]]) -> str:
+    views_text = ""
+    for model, rounds in all_views.items():
+        name = _get_model_identity(model)[0]
+        for i, text in enumerate(rounds, 1):
+            views_text += f"\n【{name} · 第{i}轮】\n{text}\n"
+    return (
+        f"你是一位中立的讨论主持人。以下是多个 AI 模型关于「{topic}」的真实讨论记录：\n"
+        f"{views_text}\n\n"
+        "请基于以上讨论内容，生成一份简洁的共识摘要，要求：\n"
+        "1. 提炼各方真实观点中的共同认知\n"
+        "2. 指出主要分歧点（如有）\n"
+        "3. 给出综合结论\n\n"
+        "重要：必须基于以上实际讨论内容作答，不要生成空白模板或通用结构，不要使用占位符。"
+        "语气客观精炼，300字左右，用中文回复。"
+    )
+
+
+# ─── SSE 事件辅助 ─────────────────────────────────────
+
+def _sse(data: dict) -> str:
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+# ─── 核心编排 ─────────────────────────────────────────
+
+async def run_discussion(
+    topic: str,
+    models: list[str],
+    rounds: int = 2,
+) -> AsyncGenerator[str, None]:
+    """执行完整讨论流程，yield SSE 格式字符串."""
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    all_views: dict[str, list[str]] = {m: [] for m in models}
+
+    # ── Round 1：并行 ──────────────────────────────
+
+    yield _sse({"type": "round_start", "round": 1})
+
+    async def _stream_model_r1(model: str):
+        """单个模型的 Round 1 流式输出，推入 queue."""
+        accumulated = ""
+        try:
+            system = _round1_system(model, topic)
+            messages = [{"role": "user", "content": topic}]
+            async for chunk in stream_chat(model, messages, system):
+                accumulated += chunk
+                await queue.put(
+                    _sse({"type": "model_chunk", "model": model, "round": 1, "content": chunk})
+                )
+            all_views[model].append(accumulated)
+            await queue.put(
+                _sse({"type": "model_done", "model": model, "round": 1})
+            )
+        except Exception as e:
+            logger.exception(f"Round 1 error for {model}")
+            all_views[model].append(accumulated or f"[错误: {e}]")
+            await queue.put(
+                _sse({"type": "model_done", "model": model, "round": 1})
+            )
+
+    # 启动并行任务
+    tasks = [asyncio.create_task(_stream_model_r1(m)) for m in models]
+
+    # 心跳 + 消费 queue
+    done_count = 0
+    target_done = len(models)  # 每个模型产生一个 model_done
+    last_yield = time.monotonic()
+
+    while done_count < target_done:
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=10.0)
+        except asyncio.TimeoutError:
+            # 心跳
+            yield ": heartbeat\n\n"
+            last_yield = time.monotonic()
+            continue
+
+        if event is None:
+            continue
+        yield event
+        last_yield = time.monotonic()
+
+        # 计数 model_done
+        if '"type": "model_done"' in event:
+            done_count += 1
+
+    # 确保所有任务完成
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # ── Round 2：串行 ──────────────────────────────
+
+    if rounds >= 2:
+        yield _sse({"type": "round_start", "round": 2})
+
+        for model in models:
+            others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
+            system = _round2_system(model, topic, others)
+            messages = [{"role": "user", "content": f"请回应其他模型关于「{topic}」的观点。"}]
+
+            accumulated = ""
+            try:
+                async for chunk in stream_chat(model, messages, system):
+                    accumulated += chunk
+                    yield _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
+                all_views[model].append(accumulated)
+            except Exception as e:
+                logger.exception(f"Round 2 error for {model}")
+                all_views[model].append(accumulated or f"[错误: {e}]")
+
+            yield _sse({"type": "model_done", "model": model, "round": 2})
+
+    # ── 共识生成 ───────────────────────────────────
+
+    system = _consensus_system(topic, all_views)
+    consensus_model = models[0]  # 默认用第一个模型生成共识
+
+    try:
+        async for chunk in stream_chat(
+            consensus_model,
+            [{"role": "user", "content": f"请根据以上讨论记录，为「{topic}」这一议题生成共识摘要。"}],
+            system,
+        ):
+            yield _sse({"type": "consensus_chunk", "content": chunk})
+    except Exception as e:
+        logger.exception("Consensus generation error")
+        yield _sse({"type": "consensus_chunk", "content": f"\n\n[共识生成失败: {e}]"})
+
+    yield _sse({"type": "done"})
