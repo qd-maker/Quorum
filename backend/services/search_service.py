@@ -50,10 +50,10 @@ def _sync_tavily_search(query: str, max_results: int, api_key: str) -> list[dict
                 "api_key": api_key,
                 "query": query,
                 "max_results": max_results,
-                "search_depth": "basic",
-                "include_answer": False,
+                "search_depth": "advanced",  # 获取完整正文
+                "include_answer": True,        # 附带 Tavily 自动摘要
             },
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -113,7 +113,7 @@ def format_search_context(results: list[dict], query: str) -> str:
         if title or body:
             lines.append(f"\n[{i}] {title}")
             if body:
-                lines.append(body[:300] + ("…" if len(body) > 300 else ""))
+                lines.append(body[:600] + ("…" if len(body) > 600 else ""))
             if href:
                 lines.append(f"来源：{href}")
     return "\n".join(lines)
