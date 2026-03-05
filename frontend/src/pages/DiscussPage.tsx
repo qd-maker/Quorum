@@ -620,26 +620,30 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     const q = followUpInput.trim()
     if (!q || isFollowingUp) return
 
-    // 构建讨论上下文文本
+    // 构建讨论上下文文本（精简版，防止代理截断）
     const contextParts: string[] = []
     const r1 = messagesRef.current.filter(m => m.round === 1)
     const r2 = messagesRef.current.filter(m => m.round === 2)
+
+    // 为了防止上下文过大（类似于共识生成的痛点），截断原始发言
+    const truncateMsg = (text: string) => text.length > 200 ? text.slice(0, 200) + '...' : text;
+
     if (r1.length) {
-      contextParts.push('【第一轮讨论】')
+      contextParts.push('【第一轮讨论要点】')
       r1.forEach(m => {
         const name = MODEL_META[m.model]?.shortName || m.model
-        contextParts.push(`${name}：\n${m.content}`)
+        contextParts.push(`${name}：\n${truncateMsg(m.content)}`)
       })
     }
     if (r2.length) {
-      contextParts.push('\n【第二轮讨论】')
+      contextParts.push('\n【第二轮讨论要点】')
       r2.forEach(m => {
         const name = MODEL_META[m.model]?.shortName || m.model
-        contextParts.push(`${name}：\n${m.content}`)
+        contextParts.push(`${name}：\n${truncateMsg(m.content)}`)
       })
     }
     if (consensusRef.current) {
-      contextParts.push(`\n【达成共识】\n${consensusRef.current}`)
+      contextParts.push(`\n【达成共识（核心）】\n${consensusRef.current}`)
     }
     const context = contextParts.join('\n\n')
 

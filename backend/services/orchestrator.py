@@ -9,7 +9,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator
 
-from services.model_service import stream_chat, MODEL_NAME_MAP
+from services.model_service import stream_chat, complete_chat, MODEL_NAME_MAP
 from services.search_service import (
     get_current_datetime_str,
     search_web,
@@ -87,36 +87,73 @@ def _round2_system(model: str, topic: str, others: dict[str, str]) -> str:
     )
 
 
-def _consensus_system(topic: str, all_views: dict[str, list[str]], search_ctx: str = "") -> str:
+def _consensus_system(topic: str) -> str:
+    """共识生成的 system prompt — 仅角色指令，不含讨论内容。"""
     now_str = get_current_datetime_str()
-    views_text = ""
-    for model, rounds in all_views.items():
-        base_name = _get_base_name(model)
-        for i, text in enumerate(rounds, 1):
-            views_text += f"\n【{base_name} · 第{i}轮】\n{text}\n"
-    search_block = f"\n\n{search_ctx}" if search_ctx else ""
     return (
         f"你是一位中立的讨论主持人。当前时间：{now_str}\n"
-        f"以下是各模型（GPT、Gemini、Grok、DeepSeek）关于「{topic}」的真实讨论记录：\n"
-        f"{views_text}{search_block}\n\n"
-        "请基于以上讨论内容，生成一份简洁的共识摘要，要求：\n"
+        "你的任务是基于对话历史中各模型的实际发言，生成一份简洁的共识摘要。\n\n"
+        "要求：\n"
         "1. 提炼各方真实观点中的共同认知\n"
         "2. 指出主要分歧点（如有）\n"
         "3. 给出综合结论\n\n"
-        "【称呼规范】摘要中指代具体模型时，一律只写大类名称（如：GPT认为...而Grok认为...），绝对不要出现带小版本号的名称（如 gpt-4o, gemini-2.0-flash）。\n"
-        "重要：必须基于以上实际讨论内容作答，不要生成空白模板或通用结构，不要使用占位符。"
-        "语气客观精炼，300字左右，用中文回复。"
+        "【称呼规范】一律只写大类名称（GPT/Gemini/Grok/DeepSeek），不要出现版本号。\n"
+        "重要：必须引用对话历史中的实际观点作答，语气客观精炼，300字左右，中文回复。"
     )
 
 
-def _followup_system(topic: str, context: str) -> str:
+def _summarize_system(model: str, topic: str) -> str:
+    """让模型总结自己在讨论中的核心观点。"""
+    base_name = _get_base_name(model)
+    return (
+        f"你是 {base_name}。你刚刚参与了一场关于「{topic}」的多AI讨论。\n"
+        "以下对话历史中是你在两轮讨论中的完整发言记录。\n\n"
+        "请用 100-150 字总结你的核心观点：\n"
+        "1. 你的主要立场是什么\n"
+        "2. 你最关键的论据/依据\n"
+        "3. 你与其他模型的分歧点（如有）\n\n"
+        "要求：观点鲜明，不要含糊其辞，不要说'作为AI我没有观点'。\n"
+        "直接输出总结，不要加标题或前缀。"
+    )
+
+
+def _build_consensus_messages(
+    topic: str,
+    model_summaries: dict[str, str],
+    search_ctx: str = "",
+) -> list[dict]:
+    """基于各模型的观点总结，构建共识生成的 user message。
+
+    输入是经过总结压缩后的观点（每个约 100-150 字），
+    总量控制在 500-700 字，不会被任何代理截断。
+    """
+    parts: list[str] = []
+    parts.append(f"# 讨论议题：「{topic}」\n")
+
+    if search_ctx:
+        parts.append(search_ctx)
+
+    parts.append("---\n## 各模型观点总结\n")
+    for model, summary in model_summaries.items():
+        base = _get_base_name(model)
+        parts.append(f"### {base} 的核心观点：\n{summary}\n")
+
+    parts.append(
+        f"---\n\n以上是各模型关于「{topic}」的核心观点总结。\n"
+        "请基于以上各方观点，生成共识摘要。"
+    )
+
+    return [{"role": "user", "content": "\n".join(parts)}]
+
+
+def _followup_system(topic: str) -> str:
+    """追问的 system prompt — 仅角色指令，讨论上下文通过 messages 传入。"""
     now_str = get_current_datetime_str()
     return (
         f"你是一位中立的讨论主持人。当前时间：{now_str}\n"
-        f"以下是多个 AI 模型关于「{topic}」的完整讨论记录（含共识）：\n\n"
-        f"{context}\n\n"
-        "用户现在对上述讨论有进一步的追问，请以主持人身份，基于以上完整讨论内容作出回应。"
-        "要求：回答须贴合实际讨论内容，客观中立，200-400字，用中文回复。"
+        "对话历史中包含多个AI模型的完整讨论记录和共识。\n"
+        "请以主持人身份，基于讨论内容回应用户的追问。\n"
+        "要求：回答须贴合实际讨论内容，客观中立，200-400字，中文回复。"
     )
 
 
@@ -225,15 +262,48 @@ async def run_discussion(
 
             yield _sse({"type": "model_done", "model": model, "round": 2})
 
-    # ── 共识生成（遍历模型直到成功）────────────────────
+    # ── Phase 1：观点总结（每个模型总结自己的核心观点）──────
 
-    system = _consensus_system(topic, all_views, search_ctx)
-    consensus_user_msg = [{"role": "user", "content": f"请根据以上讨论记录，为「{topic}」这一议题生成共识摘要。"}]
+    yield _sse({"type": "consensus_phase", "phase": "summarizing"})
+    model_summaries: dict[str, str] = {}
+
+    for model in models:
+        base_name = _get_base_name(model)
+        views = all_views.get(model, [])
+        if not views or all(not v.strip() for v in views):
+            logger.warning(f"No views for {base_name}, skipping summary")
+            continue
+
+        # 把该模型的发言拼成 user message
+        view_parts = []
+        for i, text in enumerate(views, 1):
+            view_parts.append(f"【第{i}轮发言】\n{text}")
+        view_text = "\n\n".join(view_parts)
+
+        system = _summarize_system(model, topic)
+        messages = [{"role": "user", "content": view_text}]
+
+        try:
+            summary = await complete_chat(model, messages, system)
+            model_summaries[model] = summary
+            logger.info(f"  {base_name} summary: {len(summary)} chars")
+        except Exception:
+            # 总结失败时用原始发言的首段兜底
+            logger.warning(f"Summary failed for {base_name}, using truncated original")
+            model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
+
+    # ── Phase 2：共识合成 ─────────────────────────────────
+
+    yield _sse({"type": "consensus_phase", "phase": "synthesizing"})
+    consensus_system = _consensus_system(topic)
+    consensus_msgs = _build_consensus_messages(topic, model_summaries, search_ctx)
+    total_chars = sum(len(m["content"]) for m in consensus_msgs)
+    logger.info(f"Consensus payload: {len(model_summaries)} summaries, {total_chars} total chars")
     consensus_generated = False
 
     for consensus_model in models:
         try:
-            async for chunk in stream_chat(consensus_model, consensus_user_msg, system):
+            async for chunk in stream_chat(consensus_model, consensus_msgs, consensus_system):
                 yield _sse({"type": "consensus_chunk", "content": chunk})
             consensus_generated = True
             break  # 成功则退出
@@ -256,8 +326,13 @@ async def run_followup(
     models: list[str],
 ) -> AsyncGenerator[str, None]:
     """基于完整讨论上下文，以主持人身份回答用户追问."""
-    system = _followup_system(topic, context)
-    messages = [{"role": "user", "content": question}]
+    system = _followup_system(topic)
+    # 讨论上下文放入 messages，而非 system prompt
+    messages = [
+        {"role": "user", "content": f"以下是关于「{topic}」的完整讨论记录（含共识）：\n\n{context}"},
+        {"role": "assistant", "content": "已了解完整讨论内容和共识。请问有什么追问？"},
+        {"role": "user", "content": question},
+    ]
 
     for model in models:
         try:
