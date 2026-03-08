@@ -257,75 +257,92 @@ async def run_discussion(
     if rounds >= 2:
         yield _sse({"type": "round_start", "round": 2})
 
-        for model in models:
-            others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
-            role_desc = roles.get(model, "")
-            system = _round2_system(model, topic, others, role_desc)
-            messages = [{"role": "user", "content": f"请回应其他模型并深化讨论议题「{topic}」。"}]
+        try:
+            for model in models:
+                others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
+                role_desc = roles.get(model, "")
+                system = _round2_system(model, topic, others, role_desc)
+                messages = [{"role": "user", "content": f"请回应其他模型并深化讨论议题「{topic}」。"}]
 
-            accumulated = ""
-            try:
-                async for chunk in stream_chat(model, messages, system):
-                    accumulated += chunk
-                    yield _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
-                all_views[model].append(accumulated)
-            except Exception as e:
-                logger.exception(f"Round 2 error for {model}")
-                all_views[model].append(accumulated or f"[错误: {e}]")
+                accumulated = ""
+                try:
+                    async for chunk in stream_chat(model, messages, system):
+                        accumulated += chunk
+                        yield _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
+                    all_views[model].append(accumulated)
+                except Exception as e:
+                    logger.exception(f"Round 2 error for {model}")
+                    all_views[model].append(accumulated or f"[错误: {e}]")
 
-            yield _sse({"type": "model_done", "model": model, "round": 2})
+                yield _sse({"type": "model_done", "model": model, "round": 2})
+        except Exception as e:
+            logger.exception(f"Round 2 fatal error: {e}")
 
     # ── Phase 1：观点总结（每个模型总结自己的核心观点）──────
 
-    yield _sse({"type": "consensus_phase", "phase": "summarizing"})
-    model_summaries: dict[str, str] = {}
+    try:
+        yield _sse({"type": "consensus_phase", "phase": "summarizing"})
+        model_summaries: dict[str, str] = {}
 
-    for model in models:
-        base_name = _get_base_name(model)
-        views = all_views.get(model, [])
-        if not views or all(not v.strip() for v in views):
-            logger.warning(f"No views for {base_name}, skipping summary")
-            continue
+        for model in models:
+            base_name = _get_base_name(model)
+            views = all_views.get(model, [])
+            if not views or all(not v.strip() for v in views):
+                logger.warning(f"No views for {base_name}, skipping summary")
+                continue
 
-        # 把该模型的发言拼成 user message
-        view_parts = []
-        for i, text in enumerate(views, 1):
-            view_parts.append(f"【第{i}轮发言】\n{text}")
-        view_text = "\n\n".join(view_parts)
+            # 把该模型的发言拼成 user message
+            view_parts = []
+            for i, text in enumerate(views, 1):
+                view_parts.append(f"【第{i}轮发言】\n{text}")
+            view_text = "\n\n".join(view_parts)
 
-        system = _summarize_system(model, topic)
-        messages = [{"role": "user", "content": view_text}]
+            system = _summarize_system(model, topic)
+            messages = [{"role": "user", "content": view_text}]
 
-        try:
-            summary = await complete_chat(model, messages, system)
-            model_summaries[model] = summary
-            logger.info(f"  {base_name} summary: {len(summary)} chars")
-        except Exception:
-            # 总结失败时用原始发言的首段兜底
-            logger.warning(f"Summary failed for {base_name}, using truncated original")
-            model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
+            try:
+                summary = await complete_chat(model, messages, system)
+                model_summaries[model] = summary
+                logger.info(f"  {base_name} summary: {len(summary)} chars")
+            except Exception:
+                # 总结失败时用原始发言的首段兜底
+                logger.warning(f"Summary failed for {base_name}, using truncated original")
+                model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
+    except Exception as e:
+        logger.exception(f"Summarization phase fatal error: {e}")
+        # 兜底：如果总结阶段完全崩溃，用原始发言截断作为总结
+        if not model_summaries:
+            model_summaries = {}
+            for model in models:
+                views = all_views.get(model, [])
+                if views and views[0].strip():
+                    model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
 
     # ── Phase 2：共识合成 ─────────────────────────────────
 
-    yield _sse({"type": "consensus_phase", "phase": "synthesizing"})
-    consensus_system = _consensus_system(topic)
-    consensus_msgs = _build_consensus_messages(topic, model_summaries, search_ctx)
-    total_chars = sum(len(m["content"]) for m in consensus_msgs)
-    logger.info(f"Consensus payload: {len(model_summaries)} summaries, {total_chars} total chars")
-    consensus_generated = False
+    try:
+        yield _sse({"type": "consensus_phase", "phase": "synthesizing"})
+        consensus_system = _consensus_system(topic)
+        consensus_msgs = _build_consensus_messages(topic, model_summaries, search_ctx)
+        total_chars = sum(len(m["content"]) for m in consensus_msgs)
+        logger.info(f"Consensus payload: {len(model_summaries)} summaries, {total_chars} total chars")
+        consensus_generated = False
 
-    for consensus_model in models:
-        try:
-            async for chunk in stream_chat(consensus_model, consensus_msgs, consensus_system):
-                yield _sse({"type": "consensus_chunk", "content": chunk})
-            consensus_generated = True
-            break  # 成功则退出
-        except Exception:
-            logger.warning(f"Consensus failed with {consensus_model}, trying next model...")
-            continue
+        for consensus_model in models:
+            try:
+                async for chunk in stream_chat(consensus_model, consensus_msgs, consensus_system):
+                    yield _sse({"type": "consensus_chunk", "content": chunk})
+                consensus_generated = True
+                break  # 成功则退出
+            except Exception:
+                logger.warning(f"Consensus failed with {consensus_model}, trying next model...")
+                continue
 
-    if not consensus_generated:
-        yield _sse({"type": "consensus_chunk", "content": "[所有模型共识生成均失败，请检查 API 配置]"})
+        if not consensus_generated:
+            yield _sse({"type": "consensus_chunk", "content": "[所有模型共识生成均失败，请检查 API 配置]"})
+    except Exception as e:
+        logger.exception(f"Consensus phase fatal error: {e}")
+        yield _sse({"type": "consensus_chunk", "content": f"[共识生成异常: {e}]"})
 
     yield _sse({"type": "done"})
 

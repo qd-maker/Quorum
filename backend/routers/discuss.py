@@ -2,6 +2,7 @@
 POST /api/discuss/followup — 基于完整讨论上下文的追问端点.
 """
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -45,8 +46,11 @@ async def discuss(req: DiscussRequest):
         try:
             async for event in run_discussion(req.topic, req.models, req.rounds, roles=req.roles):
                 yield event
-        except Exception:
+        except Exception as e:
             logger.exception("Discussion stream error")
+            # 向前端发送错误提示，避免静默失败
+            yield f"data: {json.dumps({'type': 'consensus_chunk', 'content': f'[讨论流异常中断: {e}]'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -75,8 +79,10 @@ async def discuss_followup(req: FollowUpRequest):
         try:
             async for event in run_followup(req.question, req.topic, req.context, valid_models):
                 yield event
-        except Exception:
+        except Exception as e:
             logger.exception("Followup stream error")
+            yield f"data: {json.dumps({'type': 'followup_chunk', 'content': f'[追问流异常中断: {e}]'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'followup_done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
