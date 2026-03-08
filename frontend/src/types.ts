@@ -101,6 +101,7 @@ export interface DiscussMessage {
   id: string
   model: ModelId
   round: number
+  role?: string
   content: string
   isStreaming: boolean
   timestamp: number

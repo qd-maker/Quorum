@@ -1,37 +1,53 @@
+import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { useState } from 'react'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, ExternalLink } from 'lucide-react'
+
+export interface SourceItem {
+    title: string
+    url: string
+}
 
 /**
- * Markdown 渲染器 — 支持 GFM(表格/删除线/任务列表) + 代码高亮
- * 流式输出时也能正确渲染（增量 Markdown）
+ * Markdown 渲染器 — 支持 GFM + Math(LaTeX) + 代码高亮 + 引用来源 tooltip
  */
 export default function MarkdownRenderer({
     content,
     isStreaming = false,
     accentColor,
+    sources = [],
 }: {
     content: string
     isStreaming?: boolean
     accentColor?: string
+    sources?: SourceItem[]
 }) {
+    // 预处理：将 [N] 和【N】引用标记替换为 Unicode 标记，避免被 react-markdown 解析为链接
+    const processedContent = sources.length > 0
+        ? content
+            .replace(/\[(\d+)\]/g, '⟦CITE:$1⟧')
+            .replace(/【(\d+)】/g, '⟦CITE:$1⟧')
+        : content
+
     return (
-        <div className="markdown-body">
+        <div className="markdown-body prose-custom">
             <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeHighlight, rehypeKatex]}
                 components={{
-                    // 代码块
                     pre({ children }) {
-                        return <div className="relative group/code my-3">{children}</div>
+                        return <div className="relative group/code my-4">{children}</div>
                     },
                     code({ className, children, ...props }) {
                         const isInline = !className
                         if (isInline) {
                             return (
-                                <code className="px-1.5 py-0.5 bg-white/8 rounded-md text-[13px] font-mono text-violet-300" {...props}>
+                                <code className="px-1.5 py-0.5 bg-white/10 rounded-md text-[13px] font-mono text-violet-300 font-medium" {...props}>
                                     {children}
                                 </code>
                             )
@@ -39,59 +55,136 @@ export default function MarkdownRenderer({
                         const lang = className?.replace('hljs language-', '')?.replace('language-', '') || ''
                         return <CodeBlock lang={lang} code={String(children).replace(/\n$/, '')} />
                     },
-                    // 段落
                     p({ children }) {
-                        return <p className="mb-2.5 last:mb-0">{children}</p>
+                        return <p className="mb-4 last:mb-0 leading-relaxed text-text-2">{injectCitations(children, sources)}</p>
                     },
-                    // 标题
-                    h1({ children }) { return <h1 className="text-lg font-bold text-text-1 mt-4 mb-2">{children}</h1> },
-                    h2({ children }) { return <h2 className="text-base font-bold text-text-1 mt-3 mb-2">{children}</h2> },
-                    h3({ children }) { return <h3 className="text-sm font-bold text-text-1 mt-3 mb-1.5">{children}</h3> },
-                    // 列表
-                    ul({ children }) { return <ul className="list-disc pl-5 mb-2.5 space-y-1">{children}</ul> },
-                    ol({ children }) { return <ol className="list-decimal pl-5 mb-2.5 space-y-1">{children}</ol> },
-                    li({ children }) { return <li className="text-text-2">{children}</li> },
-                    // 引用
+                    li({ children }) { return <li className="text-text-2">{injectCitations(children, sources)}</li> },
+                    h1({ children }) { return <h1 className="text-xl font-bold text-text-1 mt-6 mb-4">{children}</h1> },
+                    h2({ children }) { return <h2 className="text-lg font-bold text-text-1 mt-5 mb-3">{children}</h2> },
+                    h3({ children }) { return <h3 className="text-base font-bold text-text-1 mt-4 mb-2">{children}</h3> },
+                    ul({ children }) { return <ul className="list-disc pl-6 mb-4 space-y-2">{children}</ul> },
+                    ol({ children }) { return <ol className="list-decimal pl-6 mb-4 space-y-2">{children}</ol> },
                     blockquote({ children }) {
                         return (
-                            <blockquote className="border-l-2 border-violet-400/40 pl-3 my-2.5 text-text-4 italic">
+                            <blockquote className="border-l-4 border-violet-500/40 pl-4 py-1 my-4 bg-violet-500/5 rounded-r-lg text-text-3 italic">
                                 {children}
                             </blockquote>
                         )
                     },
-                    // 表格
                     table({ children }) {
                         return (
-                            <div className="overflow-x-auto my-3 rounded-lg border border-white/10">
-                                <table className="min-w-full text-sm">{children}</table>
+                            <div className="overflow-x-auto my-5 rounded-xl border border-white/10 shadow-sm">
+                                <table className="min-w-full text-sm divide-y divide-white/10">{children}</table>
                             </div>
                         )
                     },
                     thead({ children }) { return <thead className="bg-white/5">{children}</thead> },
-                    th({ children }) { return <th className="px-3 py-2 text-left text-xs font-semibold text-text-2 border-b border-white/10">{children}</th> },
-                    td({ children }) { return <td className="px-3 py-2 text-text-3 border-b border-white/5">{children}</td> },
-                    // 链接
+                    th({ children }) { return <th className="px-4 py-3 text-left text-xs font-bold text-text-1 uppercase tracking-wider">{children}</th> },
+                    td({ children }) { return <td className="px-4 py-3 text-text-3 border-t border-white/5">{children}</td> },
                     a({ href, children }) {
-                        return <a href={href} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline underline-offset-2">{children}</a>
+                        return <a href={href} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-cyan-400 transition-colors underline underline-offset-4 decoration-violet-500/30 font-medium">{children}</a>
                     },
-                    // 分割线
-                    hr() { return <hr className="my-4 border-white/10" /> },
-                    // 粗体/斜体
-                    strong({ children }) { return <strong className="font-semibold text-text-1">{children}</strong> },
-                    em({ children }) { return <em className="italic text-text-3">{children}</em> },
+                    hr() { return <hr className="my-6 border-white/10" /> },
+                    strong({ children }) { return <strong className="font-bold text-text-1">{children}</strong> },
+                    em({ children }) { return <em className="italic text-text-3 leading-loose">{children}</em> },
                 }}
             >
-                {content}
+                {processedContent}
             </ReactMarkdown>
-            {/* 流式光标 */}
             {isStreaming && (
                 <span
-                    className="inline-block w-0.5 h-4 ml-0.5 rounded-full animate-pulse align-text-bottom"
-                    style={{ background: accentColor || '#8b5cf6' }}
+                    className="inline-block w-1 h-5 ml-1 rounded-full animate-pulse transition-all shadow-[0_0_10px_currentColor]"
+                    style={{ background: accentColor || '#a855f7', color: accentColor || '#a855f7' }}
                 />
             )}
         </div>
     )
+}
+
+// ─── Citation Tooltip ─────────────────────────────
+function CitationBadge({ index, source }: { index: number; source?: SourceItem }) {
+    const [show, setShow] = useState(false)
+
+    if (!source) {
+        return <sup className="text-[10px] text-violet-400/60 font-mono">[{index}]</sup>
+    }
+
+    return (
+        <span
+            className="relative inline-block align-super"
+            onMouseEnter={() => setShow(true)}
+            onMouseLeave={() => setShow(false)}
+        >
+            <sup className="cursor-pointer text-[10px] font-bold text-violet-400 bg-violet-500/15 px-1 py-0.5 rounded-md hover:bg-violet-500/30 transition-all">
+                {index}
+            </sup>
+            {show && (
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 z-50 animate-spring-pop">
+                    <span className="block bg-bg-3 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-sm">
+                        <span className="text-[11px] text-text-2 font-medium leading-snug line-clamp-2 block mb-1.5">
+                            {source.title}
+                        </span>
+                        {source.url && (
+                            <a
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-cyan-400 transition-colors"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <ExternalLink size={9} />
+                                <span className="truncate">{(() => { try { return new URL(source.url).hostname } catch { return source.url } })()}</span>
+                            </a>
+                        )}
+                    </span>
+                    <span className="absolute left-1/2 -translate-x-1/2 top-full w-2 h-2 bg-bg-3 border-r border-b border-white/10 rotate-45 -mt-1" />
+                </span>
+            )}
+        </span>
+    )
+}
+
+/** 递归扫描 React children，将文本中的 ⟦CITE:N⟧ 替换为 CitationBadge */
+function injectCitations(children: React.ReactNode, sources: SourceItem[]): React.ReactNode {
+    if (!sources || sources.length === 0) return children
+
+    const processNode = (node: React.ReactNode, key: number): React.ReactNode => {
+        // 纯文本：拆分并替换标记
+        if (typeof node === 'string') {
+            const parts = node.split(/(⟦CITE:\d+⟧)/g)
+            if (parts.length === 1) return node
+            return (
+                <React.Fragment key={`frag-${key}`}>
+                    {parts.map((part, i) => {
+                        const match = part.match(/^⟦CITE:(\d+)⟧$/)
+                        if (match) {
+                            const idx = parseInt(match[1], 10)
+                            return <CitationBadge key={`cite-${key}-${i}`} index={idx} source={sources[idx - 1]} />
+                        }
+                        return part
+                    })}
+                </React.Fragment>
+            )
+        }
+        // 数组：递归处理每个子节点
+        if (Array.isArray(node)) {
+            return node.map((child, i) => processNode(child, i))
+        }
+        // React 元素：递归 clone 其 children
+        if (React.isValidElement(node)) {
+            const props = node.props as Record<string, any>
+            if (props.children) {
+                const newChildren = processNode(props.children, key + 100)
+                return React.cloneElement(node, { key: `cloned-${key}` }, newChildren)
+            }
+        }
+        return node
+    }
+
+    if (Array.isArray(children)) {
+        return children.map((child, i) => processNode(child, i))
+    }
+    return processNode(children, 0)
 }
 
 // ─── 代码块（带复制按钮 + 语言标签）──────────────
@@ -106,7 +199,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 
     return (
         <div className="relative rounded-xl overflow-hidden bg-[#0d1117] border border-white/8 my-3">
-            {/* 顶栏 */}
             <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/8">
                 <span className="text-[11px] font-mono text-text-5 uppercase tracking-wide">{lang || 'code'}</span>
                 <button
@@ -117,7 +209,6 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
                     {copied ? '已复制' : '复制'}
                 </button>
             </div>
-            {/* 代码 */}
             <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed">
                 <code className={`hljs language-${lang}`}>{code}</code>
             </pre>

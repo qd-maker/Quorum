@@ -98,7 +98,7 @@ function UserMessage({ content, attachment }: { content: string; attachment?: At
 }
 
 // ─── Assistant bubble ─────────────────────────────────
-function AssistantMessage({ msg }: { msg: ChatMessage & { isStreaming?: boolean } }) {
+function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStreaming?: boolean }; sources?: { title: string; url: string }[] }) {
   const meta = MODEL_META[msg.model!]
   const bubbleMap: Record<ModelId, string> = {
     'gpt-4o': 'bubble-gpt',
@@ -119,6 +119,7 @@ function AssistantMessage({ msg }: { msg: ChatMessage & { isStreaming?: boolean 
             content={msg.content}
             isStreaming={!!msg.isStreaming}
             accentColor={meta.color}
+            sources={sources}
           />
         </div>
       </div>
@@ -162,6 +163,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [fileError, setFileError] = useState('')
+  const [chatSources, setChatSources] = useState<{ title: string; url: string }[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<(ChatMessage & { isStreaming?: boolean })[]>([])
@@ -350,6 +352,9 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     setInput('')
     setIsTyping(true)
 
+    // 清空上一轮的搜索来源
+    setChatSources([])
+
     const aiId = (Date.now() + 1).toString()
     const apiMessages = updatedMessages.map((m, i) =>
       i === updatedMessages.length - 1
@@ -391,6 +396,9 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             const data = JSON.parse(payload)
             if (data.content) {
               updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + data.content } : m))
+            }
+            if (data.sources) {
+              setChatSources(data.sources)
             }
             if (data.error) {
               updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + `\n\n❌ ${data.error}`, isStreaming: false } : m))
@@ -454,7 +462,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             {messages.map(msg =>
               msg.role === 'user'
                 ? <UserMessage key={msg.id} content={msg.content} attachment={(msg as any).attachment} />
-                : <AssistantMessage key={msg.id} msg={msg} />
+                : <AssistantMessage key={msg.id} msg={msg} sources={chatSources} />
             )}
             {isTyping && <TypingIndicator modelId={model} />}
             <div ref={bottomRef} />

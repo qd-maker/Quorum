@@ -56,10 +56,13 @@ async def chat(req: ChatRequest):
 
     # 实时搜索注入
     search_ctx = ""
-    if needs_search(last_user_msg):
+    search_sources: list[dict] = []
+    should_search = needs_search(last_user_msg) or len(last_user_msg) > 5
+    if should_search:
         try:
             results = await search_web(last_user_msg, max_results=5)
             search_ctx = format_search_context(results, last_user_msg)
+            search_sources = [{"title": r.get("title", ""), "url": r.get("href", "")} for r in results if r.get("title")]
         except Exception:
             logger.warning("Search failed in chat, continuing without results")
 
@@ -67,6 +70,10 @@ async def chat(req: ChatRequest):
 
     async def event_stream():
         try:
+            # 先发送搜索来源（如果有）
+            if search_sources:
+                sources_data = json.dumps({"sources": search_sources}, ensure_ascii=False)
+                yield f"data: {sources_data}\n\n"
             async for chunk in stream_chat(req.model, req.messages, system_prompt):
                 data = json.dumps({"content": chunk}, ensure_ascii=False)
                 yield f"data: {data}\n\n"

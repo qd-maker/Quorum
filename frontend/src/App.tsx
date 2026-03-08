@@ -4,6 +4,7 @@ import { Menu } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import AuthPage from './pages/AuthPage'
+import OfflineIndicator from './components/OfflineIndicator'
 
 // 路由级懒加载 — 减小首屏 bundle 体积
 const ChatPage = lazy(() => import('./pages/ChatPage'))
@@ -76,21 +77,24 @@ function AppContent() {
         }>
           {/* Chat */}
           <div
-            className="absolute inset-0 flex flex-col"
-            style={{ display: isChat ? 'flex' : 'none' }}
+            className="absolute inset-0 flex flex-col page-container gpu-accelerated"
+            data-active={isChat ? "true" : "false"}
           >
             <ChatPage active={isChat} sessionId={chatSessionId} />
           </div>
 
           {/* Discuss */}
           <div
-            className="absolute inset-0 flex flex-col"
-            style={{ display: isDiscuss ? 'flex' : 'none' }}
+            className="absolute inset-0 flex flex-col page-container gpu-accelerated"
+            data-active={isDiscuss ? "true" : "false"}
           >
             <DiscussPage active={isDiscuss} sessionId={discussSessionId} />
           </div>
         </Suspense>
       </main>
+
+      {/* Global offline indicator */}
+      <OfflineIndicator />
     </div>
   )
 }

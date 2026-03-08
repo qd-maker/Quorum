@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Users, Sparkles, ArrowRight, RotateCcw, Trash2, Square, Paperclip, X, FileText, Send } from 'lucide-react'
+import {
+  Users, Sparkles, Send, RotateCcw, ArrowRight, Share2,
+  MessageSquare, Layout, LogOut, ChevronDown, Paperclip,
+  Trash2, X, Plus, Square, ChevronRight, FileText, Check
+} from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, DiscussMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
@@ -15,6 +19,60 @@ import { apiFetch } from '../lib/api'
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
 interface FollowUpItem { question: string; answer: string; isStreaming: boolean }
 const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
+const ROLES = [
+  { id: 'general', label: '通用助手', desc: '客观中立，平衡各方观点' },
+  { id: 'tech', label: '技术专家', desc: '专注架构、性能和代码质量' },
+  { id: 'critic', label: '严厉批评者', desc: '挑战假设，指出潜在隐患' },
+  { id: 'creative', label: '创意大师', desc: '跳出框框，提供新颖方案' },
+  { id: 'product', label: '产品经理', desc: '平衡用户价值与商业落地' }
+]
+
+const RECOMMENDED_PRESETS = [
+  { label: '极客对峙', roles: { 'gpt-4o': '技术专家', 'gemini-2.0-flash': '技术专家', 'grok-2': '严厉批评者', 'deepseek-chat': '技术专家' } },
+  { label: '头脑风暴', roles: { 'gpt-4o': '创意大师', 'gemini-2.0-flash': '产品经理', 'grok-2': '创意大师', 'deepseek-chat': '通用助手' } },
+  { label: '深度评审', roles: { 'gpt-4o': '严厉批评者', 'gemini-2.0-flash': '技术专家', 'grok-2': '产品经理', 'deepseek-chat': '严厉批评者' } }
+]
+
+
+function RoleDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-[100px] bg-bg-4 hover:bg-bg-5 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-text-2 transition-all outline-none"
+      >
+        <span className="truncate">{value}</span>
+        <ChevronDown size={10} className={clsx("transition-transform duration-300", isOpen && "rotate-180")} />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute bottom-full right-0 mb-1 w-48 bg-bg-3 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-spring-pop origin-bottom-right">
+            <div className="p-1.5 space-y-0.5">
+              {ROLES.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => { onChange(r.label); setIsOpen(false) }}
+                  className={clsx(
+                    "w-full flex flex-col items-start px-2.5 py-1.5 rounded-lg transition-colors text-left group",
+                    value === r.label ? "bg-violet-500/20 text-violet-300" : "hover:bg-white/5 text-text-3 hover:text-text-2"
+                  )}
+                >
+                  <span className="text-[11px] font-semibold">{r.label}</span>
+                  <span className="text-[9px] opacity-50 leading-tight mt-0.5">{r.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 
 // ─── Allowed file types ───────────────────────────────
 const TEXT_EXTS = ['txt', 'md', 'py', 'js', 'ts', 'jsx', 'tsx', 'json', 'csv',
@@ -82,7 +140,7 @@ function RoundDivider({ round, label }: { round: number; label: string }) {
 }
 
 // ─── Bubble ───────────────────────────────────────
-function DiscussBubble({ msg }: { msg: DiscussMessage }) {
+function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; index?: number; sources?: { title: string; url: string }[] }) {
   const meta = MODEL_META[msg.model]
   const borderMap: Record<ModelId, string> = {
     'gpt-4o': 'bubble-gpt',
@@ -90,12 +148,18 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
     'grok-2': 'bubble-grok',
     'deepseek-chat': 'bubble-deepseek',
   }
+  const staggerClass = `stagger-${Math.min(index + 1, 8)}`
   return (
-    <div id={msg.id} className="flex gap-3 animate-fade-in-up" style={{ opacity: 0 }}>
+    <div id={msg.id} className={clsx('flex gap-3 msg-enter gpu-accelerated', staggerClass)}>
       <ModelAvatar modelId={msg.model} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs font-semibold" style={{ color: meta.color }}>{getModelDisplayName(msg.model)}</span>
+          {msg.role && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/10 text-text-3 border border-white/5">
+              {msg.role}
+            </span>
+          )}
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
         <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed', borderMap[msg.model])}>
@@ -103,6 +167,7 @@ function DiscussBubble({ msg }: { msg: DiscussMessage }) {
             content={msg.content}
             isStreaming={!!msg.isStreaming}
             accentColor={meta.color}
+            sources={sources}
           />
         </div>
       </div>
@@ -141,13 +206,39 @@ function FollowUpBubble({ item }: { item: FollowUpItem }) {
 }
 
 // ─── Empty State (with discussion history) ────────
-function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: string) => void; onLoad: (id: string) => void; onDelete?: (id: string) => void }) {
+function DiscussEmptyState({ onStart, onLoad, onDelete }: {
+  onStart: (topic: string, roles: Record<string, string>) => void;
+  onLoad: (id: string) => void;
+  onDelete?: (id: string) => void
+}) {
   const [topic, setTopic] = useState('')
   const [history, setHistory] = useState<{ id: string; title: string; preview: string; createdAt: string }[]>([])
+  const [modelRoles, setModelRoles] = useState<Record<string, string>>({
+    'gpt-4o': '技术专家',
+    'gemini-2.0-flash': '通用助手',
+    'grok-2': '创意大师',
+    'deepseek-chat': '严厉批评者'
+  })
+  const [showRoleSetting, setShowRoleSetting] = useState(false)
+
   const [attachment, setAttachment] = useState<{ name: string; content: string } | null>(null)
   const [fileError, setFileError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleSmartRoles = () => {
+    const t = topic.toLowerCase()
+    if (t.length < 5) return
+    let preset = RECOMMENDED_PRESETS[2] // 默认深度评审
+    if (t.includes('代码') || t.includes('技术') || t.includes('架构') || t.includes('性能')) {
+      preset = RECOMMENDED_PRESETS[0]
+    } else if (t.includes('创意') || t.includes('想法') || t.includes('策划') || t.includes('方案')) {
+      preset = RECOMMENDED_PRESETS[1]
+    }
+    setModelRoles(preset.roles)
+    setShowRoleSetting(true)
+  }
+
   const suggestions = [
     'AI会在5年内取代大多数程序员吗？',
     '创业公司应该选择微服务还是单体架构？',
@@ -183,7 +274,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
       const fileContext = `\`\`\`${attachment.name}\n${attachment.content}\n\`\`\``
       finalTopic = t ? `${fileContext}\n\n${t}` : `请分析以下文件内容：\n\n${fileContext}`
     }
-    onStart(finalTopic)
+    onStart(finalTopic, modelRoles)
   }
 
   useEffect(() => {
@@ -281,7 +372,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
               onClick={handleStart}
               disabled={!canStart}
               className={clsx(
-                'flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all',
+                'flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all press-effect',
                 canStart
                   ? 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 shadow-gemini'
                   : 'bg-bg-5 text-text-5 cursor-not-allowed'
@@ -293,48 +384,94 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
           </div>
         </div>
 
-        {/* Suggestions */}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {suggestions.map(s => (
+        {/* Role Settings Toggle */}
+        <div className="mt-4 mb-2 px-1 flex items-center justify-between">
+          <button
+            onClick={() => setShowRoleSetting(!showRoleSetting)}
+            className="flex items-center gap-2 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+          >
+            <Users size={12} />
+            {showRoleSetting ? '收起角色设置' : '为各模型分配角色 (可选)'}
+          </button>
+
+          {!showRoleSetting && topic.length > 5 && (
             <button
-              key={s}
-              onClick={() => onStart(s)}
-              className="glass glass-hover px-3 py-2 rounded-xl text-xs text-text-4 hover:text-text-2 text-left leading-snug transition-all"
+              onClick={handleSmartRoles}
+              className="flex items-center gap-1.5 text-[10px] bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full hover:bg-violet-500/20 transition-all border border-violet-500/20"
             >
-              <ArrowRight size={10} className="inline mr-1.5 opacity-50" />
-              {s}
+              <Sparkles size={10} />
+              AI 智能分配角色
             </button>
-          ))}
+          )}
         </div>
+
+        {showRoleSetting && (
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+            {MODELS.map(m => (
+              <div key={m} className="bg-bg-3/50 border border-white/5 rounded-xl p-2.5 flex items-center justify-between group">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ModelAvatar modelId={m} size="sm" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-text-3">{MODEL_META[m].shortName}</span>
+                    <span className="text-[9px] text-text-5 truncate max-w-[80px]">{MODEL_META[m].description.split(' · ')[1]}</span>
+                  </div>
+                </div>
+                <RoleDropdown
+                  value={modelRoles[m]}
+                  onChange={(v) => setModelRoles(prev => ({ ...prev, [m]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Discussion History (ChatGPT project-style) */}
+      {/* Suggestions */}
+      <div className="w-full max-w-xl mt-3 grid grid-cols-2 gap-2">
+        {suggestions.map(s => (
+          <button
+            key={s}
+            onClick={() => onStart(s, modelRoles)}
+            className="glass glass-hover px-3 py-2 rounded-xl text-xs text-text-4 hover:text-text-2 text-left leading-snug transition-all"
+          >
+            <ArrowRight size={10} className="inline mr-1.5 opacity-50" />
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Discussion History */}
       {history.length > 0 && (
-        <div className="w-full max-w-xl mt-2 mb-8">
+        <div className="w-full max-w-xl mt-8 mb-12">
           <div className="flex items-center gap-2 mb-3 px-1">
             <Users size={12} className="text-violet-400" />
-            <span className="text-xs font-medium text-text-3 uppercase tracking-wider">历史讨论</span>
+            <span className="text-xs font-medium text-text-3 uppercase tracking-wider">最近讨论记录</span>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-2">
             {history.map(item => (
               <button
                 key={item.id}
                 onClick={() => onLoad(item.id)}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl glass glass-hover transition-all group"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-2xl glass glass-hover transition-all group border border-white/5 hover-lift"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Sparkles size={14} className="text-violet-400 flex-shrink-0" />
-                  <span className="text-sm text-text-2 group-hover:text-text-1 truncate transition-colors">
-                    {item.title}
-                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-500/10 transition-colors">
+                    <Sparkles size={14} className="text-violet-400" />
+                  </div>
+                  <div className="flex flex-col items-start min-w-0">
+                    <span className="text-sm text-text-2 group-hover:text-text-1 font-medium truncate w-full transition-colors text-left">
+                      {item.title}
+                    </span>
+                    <span className="text-[10px] text-text-5 truncate w-full text-left">{item.preview}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                  <span className="text-xs text-text-5">{item.createdAt}</span>
+                  <span className="text-[10px] text-text-5">{item.createdAt}</span>
                   {onDelete && (
                     <span
                       role="button"
                       onClick={(e) => { e.stopPropagation(); onDelete(item.id); setHistory(prev => prev.filter(h => h.id !== item.id)) }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-text-5 hover:text-red-400 transition-all"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-text-5 hover:text-red-400 transition-all"
                     >
                       <Trash2 size={12} />
                     </span>
@@ -353,13 +490,16 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: { onStart: (topic: str
 export default function DiscussPage({ active, sessionId }: { active: boolean; sessionId?: string }) {
   const navigate = useNavigate()
   const [topic, setTopic] = useState('')
+  const [roles, setRoles] = useState<Record<string, string>>({})
   const [phase, setPhase] = useState<Phase>('idle')
+
   const [messages, setMessages] = useState<DiscussMessage[]>([])
   const [typingModels, setTypingModels] = useState<ModelId[]>([])
   const [modelStatus, setModelStatus] = useState<Record<ModelId, 'waiting' | 'typing' | 'done' | 'idle'>>({
     'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle',
   })
   const [consensusContent, setConsensusContent] = useState('')
+  const [searchSources, setSearchSources] = useState<{ title: string; url: string }[]>([])
   const [followUpItems, setFollowUpItems] = useState<FollowUpItem[]>([])
   const [followUpInput, setFollowUpInput] = useState('')
   const [isFollowingUp, setIsFollowingUp] = useState(false)
@@ -460,11 +600,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     } catch { /* 静默 */ }
   }, [])
 
-  const runDiscussion = useCallback(async (t: string) => {
+  const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>) => {
     setTopic(t)
+    setRoles(assignedRoles)
     setPhase('round1')
     setMessages([])
     setConsensusContent('')
+    setSearchSources([])
     setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-chat': 'waiting' })
     setTypingModels([])
 
@@ -477,7 +619,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       const res = await apiFetch('/api/discuss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: t, models: MODELS, rounds: 2 }),
+        body: JSON.stringify({ topic: t, models: MODELS, rounds: 2, roles: assignedRoles }),
         signal: abortRef.current.signal,
       })
 
@@ -504,6 +646,10 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             const evt = JSON.parse(payload)
 
             switch (evt.type) {
+              case 'search_done': {
+                if (evt.sources) setSearchSources(evt.sources)
+                break
+              }
               case 'round_start': {
                 currentRound = evt.round
                 if (evt.round === 2) {
@@ -526,6 +672,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
                   const newMsg: DiscussMessage = {
                     id: key, model, round,
+                    role: assignedRoles[model], // 使用本次讨论分配的角色
                     content: evt.content, isStreaming: true, timestamp: Date.now(),
                   }
                   setMessages(prev => [...prev, newMsg])
@@ -608,6 +755,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setTopic('')
     setMessages([])
     setConsensusContent('')
+    setSearchSources([])
     setFollowUpItems([])
     setFollowUpInput('')
     setIsFollowingUp(false)
@@ -794,27 +942,60 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
           {/* Round 1 */}
           <RoundDivider round={1} label="各抒己见" />
-          {r1Messages.map(msg => <DiscussBubble key={msg.id} msg={msg} />)}
+          {r1Messages.map((msg, i) => <DiscussBubble key={msg.id} msg={msg} index={i} sources={searchSources} />)}
           {typingModels.filter(() => phase === 'round1').map(m => (
             <TypingIndicator key={m} modelId={m} />
           ))}
 
           {/* Round 2 */}
           {showR2Divider && <RoundDivider round={2} label="深度互动" />}
-          {showR2 && r2Messages.map(msg => <DiscussBubble key={msg.id} msg={msg} />)}
+          {showR2 && r2Messages.map((msg, i) => <DiscussBubble key={msg.id} msg={msg} index={i} sources={searchSources} />)}
           {typingModels.filter(() => phase === 'round2').map(m => (
             <TypingIndicator key={m} modelId={m} label={`${MODEL_META[m].shortName} 正在回应其他模型`} />
           ))}
 
+          {/* Search Sources */}
+          {searchSources.length > 0 && (showConsensus || phase === 'done') && (
+            <div className="mt-8 mb-6 animate-content-reveal">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                <span className="text-[10px] font-bold text-text-4 uppercase tracking-[0.1em]">研究资料 & 参考来源</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {searchSources.map((s, i) => (
+                  <a
+                    key={i}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 p-2 rounded-xl bg-bg-2 border border-white/5 hover:border-violet-500/20 hover:bg-violet-500/10 transition-all group"
+                  >
+                    <div className="w-6 h-6 rounded bg-violet-500/10 flex items-center justify-center flex-shrink-0 text-[9px] text-violet-400 font-bold group-hover:bg-violet-500/30 transition-colors">
+                      {i + 1}
+                    </div>
+                    <span className="text-xs text-text-3 truncate flex-1 group-hover:text-violet-200 transition-colors">{s.title}</span>
+                    <Share2 size={10} className="text-text-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Consensus */}
           {showConsensus && (
             <>
-              <div className="flex items-center gap-3 py-2 animate-fade-in">
+              <div className="flex items-center gap-3 py-2 animate-scale-reveal">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
                 <span className="text-xs gradient-text-gemini font-semibold tracking-wide">达成共识</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
               </div>
-              <ConsensusCard content={consensusContent} />
+              <ConsensusCard
+                content={consensusContent}
+                onSave={(newVal) => {
+                  setConsensusContent(newVal);
+                  setTimeout(() => saveDiscussion(), 50);
+                }}
+              />
             </>
           )}
 

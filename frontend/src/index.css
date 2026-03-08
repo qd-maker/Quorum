@@ -466,6 +466,40 @@ body,
   line-height: 1.6;
 }
 
+/* ─── Custom Prose (for MarkdownRenderer) ────────── */
+.prose-custom {
+  @apply text-text-2 leading-relaxed;
+}
+
+.prose-custom p {
+  @apply mb-4 last:mb-0;
+}
+
+.prose-custom h1, .prose-custom h2, .prose-custom h3 {
+  @apply font-bold text-text-1 tracking-tight;
+}
+
+.prose-custom strong {
+  @apply font-bold text-text-1;
+}
+
+.prose-custom code {
+  @apply font-mono text-[0.9em] bg-white/10 px-1.5 py-0.5 rounded-md text-violet-300;
+}
+
+.prose-custom blockquote {
+  @apply border-l-4 border-violet-500/30 pl-4 py-1 my-4 bg-violet-500/5 rounded-r-lg italic text-text-3;
+}
+
+/* KaTeX custom styling */
+.katex-display {
+  @apply my-6 overflow-x-auto overflow-y-hidden py-2;
+}
+
+.katex {
+  @apply text-[1.1em];
+}
+
 /* ─── Selection ─────────────────────────────────── */
 ::selection {
   background: var(--selection-bg);
@@ -552,4 +586,295 @@ body,
 /* Modal backdrop stays dark */
 [data-theme="light"] .bg-black\/60 {
   background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   Native APP-Level Animation System
+   iOS UIKit-inspired spring physics & micro-interactions
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Spring Timing Functions ──────────────────── */
+:root {
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-bouncy: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --spring-gentle: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Page Slide Transitions ───────────────────── */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+}
+
+.page-enter {
+  animation: slideInRight 0.35s var(--ease-out-expo) forwards;
+}
+
+.page-exit {
+  animation: slideOutLeft 0.25s ease-in forwards;
+  pointer-events: none;
+}
+
+/* Active page smooth transition instead of display:none */
+.page-container {
+  transition: opacity 0.3s var(--ease-out-expo), transform 0.3s var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+
+.page-container[data-active="false"] {
+  opacity: 0;
+  transform: translateX(20px);
+  pointer-events: none;
+  position: absolute;
+}
+
+.page-container[data-active="true"] {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ─── Staggered Message Entrance ───────────────── */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.msg-enter {
+  animation: messageSlideIn 0.45s var(--spring-gentle) forwards;
+  opacity: 0;
+}
+
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 60ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 180ms; }
+.stagger-5 { animation-delay: 240ms; }
+.stagger-6 { animation-delay: 300ms; }
+.stagger-7 { animation-delay: 360ms; }
+.stagger-8 { animation-delay: 420ms; }
+
+/* ─── Consensus Scale Reveal ───────────────────── */
+@keyframes scaleReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-scale-reveal {
+  animation: scaleReveal 0.5s var(--spring) forwards;
+}
+
+/* ─── Spring Pop (for dropdowns, modals) ────────── */
+@keyframes springPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(6px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03) translateY(-2px);
+  }
+  75% {
+    transform: scale(0.98) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes springPopOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) translateY(4px);
+  }
+}
+
+.animate-spring-pop {
+  animation: springPop 0.35s var(--spring) forwards;
+}
+
+.animate-spring-pop-out {
+  animation: springPopOut 0.2s ease-in forwards;
+}
+
+/* ─── Touch / Press Feedback ───────────────────── */
+.press-effect {
+  transition: transform 0.15s var(--spring), box-shadow 0.15s ease;
+  will-change: transform;
+}
+
+.press-effect:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) {
+  .press-effect:hover {
+    transform: scale(1.02);
+  }
+  .press-effect:hover:active {
+    transform: scale(0.96);
+  }
+}
+
+/* ─── Card Hover Lift ──────────────────────────── */
+.hover-lift {
+  transition: transform 0.25s var(--spring), box-shadow 0.25s ease;
+}
+
+@media (hover: hover) {
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* ─── Smooth Content Reveal ────────────────────── */
+@keyframes contentReveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.animate-content-reveal {
+  animation: contentReveal 0.4s var(--ease-out-expo) forwards;
+}
+
+/* ─── Shimmer Loading (skeleton) ───────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--bg-3)) 25%,
+    rgb(var(--bg-4)) 37%,
+    rgb(var(--bg-3)) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ─── Offline Banner Slide ─────────────────────── */
+@keyframes bannerSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bannerSlideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+.animate-banner-up {
+  animation: bannerSlideUp 0.4s var(--spring) forwards;
+}
+
+.animate-banner-down {
+  animation: bannerSlideDown 0.3s ease-in forwards;
+}
+
+/* ─── Pulse Ring (for live indicators) ─────────── */
+@keyframes pulseRing {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid currentColor;
+  animation: pulseRing 1.5s var(--ease-out-expo) infinite;
+}
+
+/* ─── GPU Acceleration Hints ───────────────────── */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

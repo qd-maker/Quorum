@@ -50,40 +50,40 @@ def _get_base_name(frontend_id: str) -> str:
     return mapping.get(frontend_id, frontend_id)
 
 
-def _round1_system(model: str, topic: str, search_ctx: str = "") -> str:
+def _round1_system(model: str, topic: str, search_ctx: str = "", role: str = "") -> str:
     name, company = _get_model_identity(model)
-    base_name = _get_base_name(model)
     now_str = get_current_datetime_str()
-    search_block = f"\n\n{search_ctx}" if search_ctx else ""
+    search_block = f"\n\n【实时搜索参考】\n{search_ctx}" if search_ctx else ""
+    role_block = f"\n你是「{role}」，请严格以此身份参与讨论并发表观点。" if role else ""
     return (
-        f"你是 {name}，由 {company} 开发。你正在参与一场多AI模型的群聊讨论。\n"
+        f"你是 {name}，由 {company} 开发。你正在参与一个多模型 AI 群聊。{role_block}\n"
         f"当前时间：{now_str}\n"
         f"讨论议题：{topic}\n"
         f"{search_block}\n"
-        "【称呼规范】为了让讨论更加自然，请在发言时自称为「我」，称呼其他模型为「GPT」「Gemini」「Grok」或「DeepSeek」，坚决省略具体的版本号（如 4o, 1.5-pro, 2.0-flash 等）。\n"
-        "讨论风格：保持你自身的特点和立场，可以与其他模型观点有分歧。\n"
-        '输出要求：直接回应议题，不要说"作为一个AI我没有观点"，要有真实立场。\n'
-        "若议题涉及近期事件，请结合上方搜索结果（如有）进行分析，并注明信息来源。\n"
-        "篇幅：200-400字，观点鲜明，结构清晰。"
+        "【称呼规范】自称为「我」，称呼其他模型为「GPT」「Gemini」「Grok」或「DeepSeek」，坚决省略版本号。\n"
+        "讨论风格：保持你自身（及特定角色）的特点和立场，观点应鲜明且具有差异化。\n"
+        '输出要求：直接回应议题，不要模棱两可，要有真实立场。\n'
+        "若上方有搜索结果，请务必引用并注明真实来源以增强观点的可信度。\n"
+        "篇幅：250-450字。"
     )
 
 
-def _round2_system(model: str, topic: str, others: dict[str, str]) -> str:
+def _round2_system(model: str, topic: str, others: dict[str, str], role: str = "") -> str:
     name, company = _get_model_identity(model)
-    base_name = _get_base_name(model)
     now_str = get_current_datetime_str()
+    role_block = f"\n你是「{role}」，请继续以此身份参与互动。" if role else ""
     other_views = "\n\n".join(
         f"【{_get_base_name(m)} 的观点】\n{text}"
         for m, text in others.items()
     )
     return (
-        f"你是 {name}，由 {company} 开发。你正在参与一场多AI模型的群聊讨论的第二轮。\n"
+        f"你是 {name}，由 {company} 开发。你正在参与群聊讨论的第 2 轮互动。{role_block}\n"
         f"当前时间：{now_str}\n"
         f"讨论议题：{topic}\n\n"
-        f"以下是其他模型在第一轮的观点：\n\n{other_views}\n\n"
-        "【称呼规范】在引用或评价其他模型时，一律只称呼它们的系列名称（如 GPT, Gemini, Grok, DeepSeek），坚决不要带上具体版本号（如 4o, 2.0-flash 等）。\n"
-        "请在回应中具体引用并反驳或赞同其他模型的观点。\n"
-        "篇幅：200-400字。"
+        f"以下是其他模型在前一轮的观点：\n\n{other_views}\n\n"
+        "【称呼规范】一律只称呼系列名称（GPT, Gemini, Grok, DeepSeek），不带版本号。\n"
+        "任务：请具体回应、引用、赞同或有理有据地反驳其他模型的观点，展现深度互动。\n"
+        "篇幅：250-450字。"
     )
 
 
@@ -169,21 +169,32 @@ async def run_discussion(
     topic: str,
     models: list[str],
     rounds: int = 2,
+    roles: dict[str, str] = {},
+    force_search: bool = False,
 ) -> AsyncGenerator[str, None]:
     """执行完整讨论流程，yield SSE 格式字符串."""
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     all_views: dict[str, list[str]] = {m: [] for m in models}
 
-    # ── 搜索预处理（并行，不阻塞讨论启动）────────────────
+    # ── 搜索预处理 ──────────────────────────────────
     search_ctx = ""
-    if needs_search(topic):
+    results: list[dict] = []
+    # 默认开启搜索，仅纯理论话题跳过
+    should_search = force_search or needs_search(topic) or len(topic) > 5
+    if should_search:
         logger.info(f"Triggering web search for topic: {topic[:50]}")
-        results = await search_web(topic, max_results=5)
-        search_ctx = format_search_context(results, topic)
-        if search_ctx:
-            logger.info(f"Search returned {len(results)} results")
-        yield _sse({"type": "search_done", "has_results": bool(search_ctx)})
+        try:
+            results = await search_web(topic, max_results=5)
+            search_ctx = format_search_context(results, topic)
+            if search_ctx:
+                logger.info(f"Search returned {len(results)} results")
+        except Exception as e:
+            logger.warning(f"Search failed: {e}")
+        
+        # 传递搜索精简结果供前端显示
+        simplified_results = [{"title": r.get("title"), "url": r.get("href")} for r in results if r.get("title")]
+        yield _sse({"type": "search_done", "has_results": bool(search_ctx), "sources": simplified_results})
 
     # ── Round 1：并行 ──────────────────────────────
 
@@ -193,7 +204,8 @@ async def run_discussion(
         """单个模型的 Round 1 流式输出，推入 queue."""
         accumulated = ""
         try:
-            system = _round1_system(model, topic, search_ctx)
+            role_desc = roles.get(model, "")
+            system = _round1_system(model, topic, search_ctx, role_desc)
             messages = [{"role": "user", "content": topic}]
             async for chunk in stream_chat(model, messages, system):
                 accumulated += chunk
@@ -247,8 +259,9 @@ async def run_discussion(
 
         for model in models:
             others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
-            system = _round2_system(model, topic, others)
-            messages = [{"role": "user", "content": f"请回应其他模型关于「{topic}」的观点。"}]
+            role_desc = roles.get(model, "")
+            system = _round2_system(model, topic, others, role_desc)
+            messages = [{"role": "user", "content": f"请回应其他模型并深化讨论议题「{topic}」。"}]
 
             accumulated = ""
             try:

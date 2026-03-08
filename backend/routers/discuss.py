@@ -21,6 +21,7 @@ class DiscussRequest(BaseModel):
     topic: str
     models: list[str] = DEFAULT_MODELS
     rounds: int = 2
+    roles: dict[str, str] = {}  # model_id -> role_description (可选)
 
 
 class FollowUpRequest(BaseModel):
@@ -42,7 +43,7 @@ async def discuss(req: DiscussRequest):
 
     async def event_stream():
         try:
-            async for event in run_discussion(req.topic, req.models, req.rounds):
+            async for event in run_discussion(req.topic, req.models, req.rounds, roles=req.roles):
                 yield event
         except Exception:
             logger.exception("Discussion stream error")
