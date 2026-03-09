@@ -1,6 +1,7 @@
 import { Trophy, Edit3, Check, X } from 'lucide-react'
 import { useState } from 'react'
 import MarkdownRenderer from './MarkdownRenderer'
+import CopyButton from './CopyButton'
 import clsx from 'clsx'
 
 interface Props {
@@ -32,7 +33,7 @@ export default function ConsensusCard({ content, onSave }: Props) {
           </div>
           <div className="flex-1">
             <h3 className="font-display font-bold text-lg tracking-tight bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
-              Quorum 多方共识摘要
+              Quorum 四方共识摘要
             </h3>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-[10px] text-text-4 font-medium uppercase tracking-wider">验证模型:</span>
@@ -44,15 +45,19 @@ export default function ConsensusCard({ content, onSave }: Props) {
             </div>
           </div>
 
-          {onSave && !isEditing && (
-            <button
-              onClick={() => { setEditContent(content); setIsEditing(true) }}
-              className="p-1.5 rounded-xl bg-white/5 text-text-4 hover:text-violet-400 hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100"
-              title="人工修正共识"
-            >
-              <Edit3 size={14} />
-            </button>
-          )}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CopyButton content={content} className="p-1.5 hover:bg-white/10" />
+
+            {onSave && !isEditing && (
+              <button
+                onClick={() => { setEditContent(content); setIsEditing(true) }}
+                className="p-1.5 rounded-xl bg-white/5 text-text-4 hover:text-violet-400 hover:bg-white/10 transition-all font-semibold"
+                title="人工修正共识"
+              >
+                <Edit3 size={14} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Divider */}

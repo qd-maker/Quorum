@@ -6,6 +6,7 @@ import { MODEL_META, getModelDisplayName } from '../types'
 import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import CopyButton from '../components/CopyButton'
 import { apiFetch } from '../lib/api'
 
 // ─── Types ───────────────────────────────────────────
@@ -114,13 +115,18 @@ function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStream
           <span className="text-xs font-semibold" style={{ color: meta.color }}>{meta.shortName}</span>
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed', bubbleMap[msg.model!])}>
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', bubbleMap[msg.model!])}>
           <MarkdownRenderer
             content={msg.content}
             isStreaming={!!msg.isStreaming}
             accentColor={meta.color}
             sources={sources}
           />
+          {!msg.isStreaming && (
+            <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+              <CopyButton content={msg.content} className="p-1 hover:bg-white/10" />
+            </div>
+          )}
         </div>
       </div>
     </div>

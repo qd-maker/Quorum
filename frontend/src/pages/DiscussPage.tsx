@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Users, Sparkles, Send, RotateCcw, ArrowRight, Share2,
   MessageSquare, Layout, LogOut, ChevronDown, Paperclip,
-  Trash2, X, Plus, Square, ChevronRight, FileText, Check
+  Trash2, X, Plus, Square, ChevronRight, FileText, Check, ImageIcon
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, DiscussMessage } from '../types'
@@ -13,6 +13,7 @@ import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import ConsensusCard from '../components/ConsensusCard'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import CopyButton from '../components/CopyButton'
 import { apiFetch } from '../lib/api'
 
 // ─── Types ───────────────────────────────────────
@@ -77,7 +78,9 @@ function RoleDropdown({ value, onChange }: { value: string; onChange: (v: string
 // ─── Allowed file types ───────────────────────────────
 const TEXT_EXTS = ['txt', 'md', 'py', 'js', 'ts', 'jsx', 'tsx', 'json', 'csv',
   'xml', 'yaml', 'yml', 'html', 'css', 'sh', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h']
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']
 const MAX_TEXT_MB = 2
+const MAX_IMAGE_MB = 4
 
 // ─── Participant Card ─────────────────────────────
 function ParticipantCard({
@@ -162,13 +165,18 @@ function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; 
           )}
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed', borderMap[msg.model])}>
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', borderMap[msg.model])}>
           <MarkdownRenderer
             content={msg.content}
             isStreaming={!!msg.isStreaming}
             accentColor={meta.color}
             sources={sources}
           />
+          {!msg.isStreaming && (
+            <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+              <CopyButton content={msg.content} className="p-1 hover:bg-white/10" />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -195,9 +203,16 @@ function FollowUpBubble({ item }: { item: FollowUpItem }) {
             <span className="text-xs font-semibold text-violet-300">主持人</span>
             <span className="text-xs text-text-5">综合分析</span>
           </div>
-          <div className="bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed border border-violet-500/15">
-            {item.answer || <span className="opacity-40">正在思考...</span>}
-            {item.isStreaming && <span className="inline-block w-1.5 h-4 ml-0.5 bg-violet-400 rounded-sm animate-pulse align-middle" />}
+          <div className="bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed border border-violet-500/15 group/bubble relative">
+            {item.answer
+              ? <MarkdownRenderer content={item.answer} isStreaming={item.isStreaming} accentColor="#8B5CF6" />
+              : <span className="opacity-40">正在思考...</span>
+            }
+            {item.answer && !item.isStreaming && (
+              <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+                <CopyButton content={item.answer} className="p-1 hover:bg-white/10" />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -207,7 +222,7 @@ function FollowUpBubble({ item }: { item: FollowUpItem }) {
 
 // ─── Empty State (with discussion history) ────────
 function DiscussEmptyState({ onStart, onLoad, onDelete }: {
-  onStart: (topic: string, roles: Record<string, string>) => void;
+  onStart: (topic: string, roles: Record<string, string>, imageData?: string) => void;
   onLoad: (id: string) => void;
   onDelete?: (id: string) => void
 }) {
@@ -221,7 +236,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
   })
   const [showRoleSetting, setShowRoleSetting] = useState(false)
 
-  const [attachment, setAttachment] = useState<{ name: string; content: string } | null>(null)
+  const [attachment, setAttachment] = useState<{ type: 'image' | 'text'; name: string; content: string } | null>(null)
   const [fileError, setFileError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -250,17 +265,22 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
     setFileError('')
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     const sizeMB = file.size / 1024 / 1024
-    if (TEXT_EXTS.includes(ext)) {
+    if (IMAGE_TYPES.includes(file.type) || file.type.startsWith('image/')) {
+      if (sizeMB > MAX_IMAGE_MB) { setFileError(`图片不能超过 ${MAX_IMAGE_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setAttachment({ type: 'image', name: file.name, content: e.target!.result as string })
+      }
+      reader.readAsDataURL(file)
+    } else if (TEXT_EXTS.includes(ext)) {
       if (sizeMB > MAX_TEXT_MB) { setFileError(`文件不能超过 ${MAX_TEXT_MB}MB`); return }
       const reader = new FileReader()
       reader.onload = e => {
-        setAttachment({ name: file.name, content: e.target!.result as string })
+        setAttachment({ type: 'text', name: file.name, content: e.target!.result as string })
       }
       reader.readAsText(file, 'utf-8')
     } else if (ext === 'pdf') {
       setFileError('PDF 暂不支持，请将内容复制粘贴后发送')
-    } else if (file.type.startsWith('image/')) {
-      setFileError('讨论室暂不支持图片附件，请在单模型对话中使用')
     } else {
       setFileError(`不支持的文件类型：.${ext}`)
     }
@@ -269,12 +289,18 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
   const handleStart = () => {
     const t = topic.trim()
     if (!t && !attachment) return
-    let finalTopic = t
-    if (attachment) {
+    if (attachment?.type === 'image') {
+      // 图片：通过 image 字段传递，topic 保持文字内容
+      const finalTopic = t || `请分析这张图片的内容`
+      onStart(finalTopic, modelRoles, attachment.content)
+    } else if (attachment?.type === 'text') {
+      // 文本文件：拼入 topic
       const fileContext = `\`\`\`${attachment.name}\n${attachment.content}\n\`\`\``
-      finalTopic = t ? `${fileContext}\n\n${t}` : `请分析以下文件内容：\n\n${fileContext}`
+      const finalTopic = t ? `${fileContext}\n\n${t}` : `请分析以下文件内容：\n\n${fileContext}`
+      onStart(finalTopic, modelRoles)
+    } else {
+      onStart(t, modelRoles)
     }
-    onStart(finalTopic, modelRoles)
   }
 
   useEffect(() => {
@@ -332,7 +358,11 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
         {/* 附件预览 */}
         {attachment && (
           <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-bg-3 border border-white/8 rounded-xl">
-            <FileText size={16} className="text-violet-400 flex-shrink-0" />
+            {attachment.type === 'image' ? (
+              <img src={attachment.content} alt={attachment.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+            ) : (
+              <FileText size={16} className="text-violet-400 flex-shrink-0" />
+            )}
             <span className="text-xs text-text-3 flex-1 truncate">{attachment.name}</span>
             <button onClick={() => setAttachment(null)} className="text-text-5 hover:text-red-400 transition-colors">
               <X size={14} />
@@ -355,7 +385,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
-                title="上传文本文件作为讨论素材"
+                title="上传文件或图片作为讨论素材"
               >
                 <Paperclip size={14} strokeWidth={1.8} />
               </button>
@@ -363,7 +393,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                accept=".txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.xml,.yaml,.yml,.html,.css,.sh,.sql,.rs,.go,.java,.c,.cpp,.h"
+                accept="image/*,.txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.xml,.yaml,.yml,.html,.css,.sh,.sql,.rs,.go,.java,.c,.cpp,.h"
                 onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = '' }}
               />
               <span className="text-xs text-text-5">Enter 开始讨论</span>
@@ -503,6 +533,9 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   const [followUpItems, setFollowUpItems] = useState<FollowUpItem[]>([])
   const [followUpInput, setFollowUpInput] = useState('')
   const [isFollowingUp, setIsFollowingUp] = useState(false)
+  const [followUpAttachment, setFollowUpAttachment] = useState<{ type: 'image' | 'text'; name: string; content: string } | null>(null)
+  const [followUpFileError, setFollowUpFileError] = useState('')
+  const followUpFileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const followUpAbortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(sessionId || null)
@@ -600,7 +633,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     } catch { /* 静默 */ }
   }, [])
 
-  const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>) => {
+  const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>, imageData?: string) => {
     setTopic(t)
     setRoles(assignedRoles)
     setPhase('round1')
@@ -613,13 +646,16 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     // 跟踪每个模型的消息 ID（用于增量更新内容）
     const msgIds: Record<string, string> = {}
     let currentRound = 1
+    let receivedDone = false
 
     try {
       abortRef.current = new AbortController()
+      const reqBody: any = { topic: t, models: MODELS, rounds: 2, roles: assignedRoles }
+      if (imageData) reqBody.image = imageData
       const res = await apiFetch('/api/discuss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: t, models: MODELS, rounds: 2, roles: assignedRoles }),
+        body: JSON.stringify(reqBody),
         signal: abortRef.current.signal,
       })
 
@@ -703,6 +739,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               }
 
               case 'done': {
+                receivedDone = true
                 setPhase('done')
                 setTypingModels([])
                 // 保存到 Supabase
@@ -714,9 +751,12 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         }
       }
 
-      // 确保最终状态
-      setPhase('done')
-      setTypingModels([])
+      // 仅在未收到正常 done 事件时兜底（连接异常关闭）
+      if (!receivedDone) {
+        console.warn('SSE stream closed without receiving done event')
+        setPhase('done')
+        setTypingModels([])
+      }
     } catch (err: any) {
       if (err.name === 'AbortError') {
         // 中断后保留已接收的消息，标记所有流结束
@@ -759,6 +799,8 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setFollowUpItems([])
     setFollowUpInput('')
     setIsFollowingUp(false)
+    setFollowUpAttachment(null)
+    setFollowUpFileError('')
     setTypingModels([])
     setModelStatus({ 'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle' })
     navigate('/discuss', { replace: true })
@@ -766,7 +808,8 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
   const handleFollowUp = useCallback(async () => {
     const q = followUpInput.trim()
-    if (!q || isFollowingUp) return
+    if (!q && !followUpAttachment) return
+    if (isFollowingUp) return
 
     // 构建讨论上下文文本（精简版，防止代理截断）
     const contextParts: string[] = []
@@ -796,16 +839,34 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     const context = contextParts.join('\n\n')
 
     const idx = followUpItems.length  // 用来更新对应条目
-    setFollowUpItems(prev => [...prev, { question: q, answer: '', isStreaming: true }])
+    const displayQ = q || (`（附件：${followUpAttachment?.name}）`)
+    setFollowUpItems(prev => [...prev, { question: displayQ, answer: '', isStreaming: true }])
     setFollowUpInput('')
+    const currentFollowUpAttachment = followUpAttachment
+    setFollowUpAttachment(null)
+    setFollowUpFileError('')
     setIsFollowingUp(true)
+
+    // 构建 API 请求体
+    let finalQuestion = q
+    if (currentFollowUpAttachment?.type === 'text') {
+      const fileCtx = `\`\`\`${currentFollowUpAttachment.name}\n${currentFollowUpAttachment.content}\n\`\`\``
+      finalQuestion = q ? `${fileCtx}\n\n${q}` : `请分析以下文件内容：\n\n${fileCtx}`
+    } else if (!q && currentFollowUpAttachment?.type === 'image') {
+      finalQuestion = '请分析这张图片的内容'
+    }
+
+    const followUpReqBody: any = { question: finalQuestion, topic: topicRef.current, context, models: MODELS }
+    if (currentFollowUpAttachment?.type === 'image') {
+      followUpReqBody.image = currentFollowUpAttachment.content
+    }
 
     try {
       followUpAbortRef.current = new AbortController()
       const res = await apiFetch('/api/discuss/followup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, topic: topicRef.current, context, models: MODELS }),
+        body: JSON.stringify(followUpReqBody),
         signal: followUpAbortRef.current.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -847,7 +908,31 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     } finally {
       setIsFollowingUp(false)
     }
-  }, [followUpInput, isFollowingUp, followUpItems.length])
+  }, [followUpInput, isFollowingUp, followUpItems.length, followUpAttachment])
+
+  // 追问文件处理
+  const processFollowUpFile = useCallback((file: File) => {
+    setFollowUpFileError('')
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const sizeMB = file.size / 1024 / 1024
+    if (IMAGE_TYPES.includes(file.type) || file.type.startsWith('image/')) {
+      if (sizeMB > MAX_IMAGE_MB) { setFollowUpFileError(`图片不能超过 ${MAX_IMAGE_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setFollowUpAttachment({ type: 'image', name: file.name, content: e.target!.result as string })
+      }
+      reader.readAsDataURL(file)
+    } else if (TEXT_EXTS.includes(ext)) {
+      if (sizeMB > MAX_TEXT_MB) { setFollowUpFileError(`文件不能超过 ${MAX_TEXT_MB}MB`); return }
+      const reader = new FileReader()
+      reader.onload = e => {
+        setFollowUpAttachment({ type: 'text', name: file.name, content: e.target!.result as string })
+      }
+      reader.readAsText(file, 'utf-8')
+    } else {
+      setFollowUpFileError(`不支持的文件类型：.${ext}`)
+    }
+  }, [])
 
   const scrollToModel = useCallback((modelId: ModelId) => {
     // 优先跳转到最新的一轮
@@ -986,7 +1071,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             <>
               <div className="flex items-center gap-3 py-2 animate-scale-reveal">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
-                <span className="text-xs gradient-text-gemini font-semibold tracking-wide">达成共识</span>
+                <span className="text-xs gradient-text-gemini font-semibold tracking-wide">四方共识</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
               </div>
               <ConsensusCard
@@ -1012,10 +1097,39 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       {phase === 'done' && (
         <div className="flex-shrink-0 px-5 py-3 border-t border-white/5 bg-bg-1/40 backdrop-blur-sm">
           <div className="max-w-3xl mx-auto space-y-2">
+            {/* 追问附件预览 */}
+            {followUpAttachment && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-bg-3 border border-white/8 rounded-xl">
+                {followUpAttachment.type === 'image' ? (
+                  <img src={followUpAttachment.content} alt={followUpAttachment.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                ) : (
+                  <FileText size={14} className="text-violet-400 flex-shrink-0" />
+                )}
+                <span className="text-xs text-text-3 flex-1 truncate">{followUpAttachment.name}</span>
+                <button onClick={() => setFollowUpAttachment(null)} className="text-text-5 hover:text-red-400 transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+            {followUpFileError && <p className="text-xs text-red-400 px-1">{followUpFileError}</p>}
             {/* 追问输入行 */}
             <div className="flex items-center gap-2">
               <div className="flex-1 flex items-center gap-2 bg-bg-3 border border-white/10 rounded-xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
-                <Sparkles size={13} className="text-violet-400 flex-shrink-0" />
+                <button
+                  onClick={() => followUpFileRef.current?.click()}
+                  className="p-0.5 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0"
+                  title="上传文件或图片"
+                  disabled={isFollowingUp}
+                >
+                  <Paperclip size={13} strokeWidth={1.8} />
+                </button>
+                <input
+                  ref={followUpFileRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,.txt,.md,.py,.js,.ts,.jsx,.tsx,.json,.csv,.xml,.yaml,.yml,.html,.css,.sh,.sql,.rs,.go,.java,.c,.cpp,.h"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) processFollowUpFile(f); e.target.value = '' }}
+                />
                 <input
                   type="text"
                   value={followUpInput}
@@ -1028,7 +1142,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               </div>
               <button
                 onClick={handleFollowUp}
-                disabled={!followUpInput.trim() || isFollowingUp}
+                disabled={(!followUpInput.trim() && !followUpAttachment) || isFollowingUp}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Send size={13} />
@@ -1042,7 +1156,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 新议题
               </button>
             </div>
-            <p className="text-xs text-text-5 pl-1">讨论已完成 · 基于 2 轮对话达成共识 · 可继续追问主持人</p>
+            <p className="text-xs text-text-5 pl-1">讨论已完成 · 基于 2 轮对话达成四方共识 · 可继续追问主持人</p>
           </div>
         </div>
       )}

@@ -171,6 +171,7 @@ async def run_discussion(
     rounds: int = 2,
     roles: dict[str, str] = {},
     force_search: bool = False,
+    image: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """执行完整讨论流程，yield SSE 格式字符串."""
 
@@ -206,7 +207,15 @@ async def run_discussion(
         try:
             role_desc = roles.get(model, "")
             system = _round1_system(model, topic, search_ctx, role_desc)
-            messages = [{"role": "user", "content": topic}]
+            # 图片仅在 Round 1 传入（Vision API 格式）
+            if image:
+                user_content: str | list = [
+                    {"type": "text", "text": topic},
+                    {"type": "image_url", "image_url": {"url": image}},
+                ]
+            else:
+                user_content = topic
+            messages = [{"role": "user", "content": user_content}]
             async for chunk in stream_chat(model, messages, system):
                 accumulated += chunk
                 await queue.put(
@@ -308,6 +317,8 @@ async def run_discussion(
                 # 总结失败时用原始发言的首段兜底
                 logger.warning(f"Summary failed for {base_name}, using truncated original")
                 model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
+            # 心跳：防止总结阶段长时间无 SSE 事件导致连接超时
+            yield ": heartbeat\n\n"
     except Exception as e:
         logger.exception(f"Summarization phase fatal error: {e}")
         # 兜底：如果总结阶段完全崩溃，用原始发言截断作为总结
@@ -354,14 +365,23 @@ async def run_followup(
     topic: str,
     context: str,
     models: list[str],
+    image: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """基于完整讨论上下文，以主持人身份回答用户追问."""
     system = _followup_system(topic)
     # 讨论上下文放入 messages，而非 system prompt
+    # 追问内容：若有图片则使用 Vision 格式
+    if image:
+        question_content: str | list = [
+            {"type": "text", "text": question},
+            {"type": "image_url", "image_url": {"url": image}},
+        ]
+    else:
+        question_content = question
     messages = [
         {"role": "user", "content": f"以下是关于「{topic}」的完整讨论记录（含共识）：\n\n{context}"},
         {"role": "assistant", "content": "已了解完整讨论内容和共识。请问有什么追问？"},
-        {"role": "user", "content": question},
+        {"role": "user", "content": question_content},
     ]
 
     for model in models:
