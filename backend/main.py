@@ -1,4 +1,4 @@
-"""Many AI — FastAPI 入口."""
+"""Quorum — FastAPI 入口."""
 
 import logging
 
@@ -9,7 +9,7 @@ from routers import chat, discuss, history, config_api, auth_router
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="Many AI", version="0.1.0")
+app = FastAPI(title="Quorum", version="0.1.0")
 
 # CORS
 app.add_middleware(

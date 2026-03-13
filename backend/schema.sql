@@ -1,4 +1,4 @@
--- Many AI: Supabase 表结构
+-- Quorum: Supabase 表结构
 -- 在 Supabase SQL Editor 中执行
 
 -- 先删除旧表（如果存在）
