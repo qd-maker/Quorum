@@ -388,6 +388,8 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let receivedDone = false
+      let finalAssistantContent = ''
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -397,23 +399,33 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const payload = line.slice(6).trim()
-          if (payload === '[DONE]') break
+          if (payload === '[DONE]') {
+            receivedDone = true
+            continue
+          }
           try {
             const data = JSON.parse(payload)
             if (data.content) {
+              finalAssistantContent += data.content
               updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + data.content } : m))
             }
             if (data.sources) {
               setChatSources(data.sources)
             }
             if (data.error) {
-              updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + `\n\n❌ ${data.error}`, isStreaming: false } : m))
+              updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: (m.content || finalAssistantContent) + `\n\n❌ ${data.error}`, isStreaming: false } : m))
+              setIsStreaming(false)
+              setTimeout(() => saveSession(), 50)
               return
             }
           } catch { /* skip */ }
         }
       }
-      updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m))
+      if (!receivedDone) {
+        updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: (m.content || finalAssistantContent) + '\n\n⚠️ 本次回复连接异常中断，以下内容可能不完整。', isStreaming: false } : m))
+      } else {
+        updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, isStreaming: false } : m))
+      }
       setIsStreaming(false)
       setTimeout(() => saveSession(), 50)
     } catch (err: any) {

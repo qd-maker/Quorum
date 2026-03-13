@@ -341,16 +341,23 @@ async def run_discussion(
 
         for consensus_model in models:
             try:
-                async for chunk in stream_chat(consensus_model, consensus_msgs, consensus_system):
-                    yield _sse({"type": "consensus_chunk", "content": chunk})
-                consensus_generated = True
-                break  # 成功则退出
+                logger.info(f"Trying consensus generation with {consensus_model}")
+                consensus_text = await complete_chat(consensus_model, consensus_msgs, consensus_system)
+                if consensus_text and consensus_text.strip():
+                    logger.info(f"Consensus generated with {consensus_model}, chars={len(consensus_text)}")
+                    yield _sse({"type": "consensus_chunk", "content": consensus_text})
+                    consensus_generated = True
+                    break
+                else:
+                    logger.warning(f"Consensus returned empty text with {consensus_model}, trying next model...")
+                    continue
             except Exception:
                 logger.warning(f"Consensus failed with {consensus_model}, trying next model...")
                 continue
 
         if not consensus_generated:
-            yield _sse({"type": "consensus_chunk", "content": "[所有模型共识生成均失败，请检查 API 配置]"})
+            logger.error("All consensus models failed or returned empty output")
+            yield _sse({"type": "consensus_chunk", "content": "[共识生成失败：所有候选模型都未返回有效内容，请重试或检查模型配置]"})
     except Exception as e:
         logger.exception(f"Consensus phase fatal error: {e}")
         yield _sse({"type": "consensus_chunk", "content": f"[共识生成异常: {e}]"})

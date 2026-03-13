@@ -584,11 +584,11 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   }, [active, sessionId])
 
   // 保存讨论到 Supabase（使用 refs 避免闭包陷阱，PUT 全量替换）
-  const saveDiscussion = useCallback(async () => {
+  const saveDiscussion = useCallback(async (consensusOverride?: string) => {
     try {
       const currentTopic = topicRef.current
       const currentMessages = messagesRef.current
-      const currentConsensus = consensusRef.current
+      const currentConsensus = consensusOverride ?? consensusRef.current
       const title = currentTopic.slice(0, 50) || '群聊讨论'
 
       let sid = sessionIdRef.current
@@ -647,6 +647,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     const msgIds: Record<string, string> = {}
     let currentRound = 1
     let receivedDone = false
+    let finalConsensus = ''
 
     try {
       abortRef.current = new AbortController()
@@ -734,16 +735,20 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
               case 'consensus_chunk': {
                 setPhase('consensus')
+                finalConsensus += evt.content || ''
                 setConsensusContent(prev => prev + evt.content)
                 break
               }
 
               case 'done': {
                 receivedDone = true
+                if (finalConsensus) {
+                  setConsensusContent(finalConsensus)
+                }
                 setPhase('done')
                 setTypingModels([])
-                // 保存到 Supabase
-                saveDiscussion()
+                // 保存到 Supabase（优先使用本地累积的最终共识，避免状态异步导致落库为空）
+                saveDiscussion(finalConsensus)
                 break
               }
             }
@@ -754,8 +759,9 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       // 仅在未收到正常 done 事件时兜底（连接异常关闭）
       if (!receivedDone) {
         console.warn('SSE stream closed without receiving done event')
-        setPhase('done')
         setTypingModels([])
+        setMessages(prev => prev.map(m => ({ ...m, isStreaming: false })))
+        setPhase('idle')
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
