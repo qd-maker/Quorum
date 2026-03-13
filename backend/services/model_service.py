@@ -9,7 +9,7 @@ from config import get_settings
 # 前端 ID → 实际 API 模型名映射（也作为显示名，用户可通过 /api/config 更新）
 MODEL_NAME_MAP: dict[str, str] = {
     "gpt-4o": "gpt-4o",
-    "gemini-2.0-flash": "gemini-2.0-flash",
+    "gemini-2.0-flash": "gemini-2.5-flash",
     "grok-2": "grok-4",
     "deepseek-chat": "deepseek-chat",
 }
