@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""        # anon key (public, for auth validation)
     SUPABASE_SERVICE_KEY: str = ""  # service_role key (private, bypasses RLS)
+    SUPABASE_JWT_SECRET: str = ""   # JWT secret (Settings > API，用于本地验证 token)
 
     # 搜索服务
     TAVILY_API_KEY: str = ""       # Tavily 搜索 API key（DuckDuckGo 不稳定时的备用）
