@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import {
   Users, Sparkles, Send, RotateCcw, ArrowRight, Share2,
-  MessageSquare, Layout, LogOut, ChevronDown, Paperclip,
+  MessageSquare, Layout, LogOut, ChevronDown, Paperclip, Globe,
   Trash2, X, Plus, Square, ChevronRight, FileText, Check, ImageIcon
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -19,6 +19,7 @@ import { apiFetch } from '../lib/api'
 // ─── Types ───────────────────────────────────────
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
 interface FollowUpItem { question: string; answer: string; isStreaming: boolean }
+interface ModelError { model: string; error: string }
 const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
 const ROLES = [
   { id: 'general', label: '通用助手', desc: '客观中立，平衡各方观点' },
@@ -87,18 +88,19 @@ function ParticipantCard({
   modelId, status, onClick
 }: {
   modelId: ModelId
-  status: 'waiting' | 'typing' | 'done' | 'idle'
+  status: 'waiting' | 'typing' | 'done' | 'idle' | 'error'
   onClick?: () => void
 }) {
   const meta = MODEL_META[modelId]
-  const statusLabel = { waiting: '等待中', typing: '发言中', done: '完成', idle: '' }
+  const statusLabel: Record<string, string> = { waiting: '等待中', typing: '发言中', done: '完成', idle: '', error: '出错' }
+  const dotColor: Record<string, string> = { waiting: '#374151', typing: meta.color, done: '#10A37F', idle: '', error: '#EF4444' }
 
   return (
     <div
       onClick={onClick}
       className={clsx(
         'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-500',
-        status === 'typing' ? 'bg-bg-3 border-white/15' : 'bg-bg-2 border-white/6',
+        status === 'typing' ? 'bg-bg-3 border-white/15' : status === 'error' ? 'bg-red-500/5 border-red-500/20' : 'bg-bg-2 border-white/6',
         onClick && 'cursor-pointer hover:bg-bg-3'
       )}>
       <div className="relative">
@@ -106,12 +108,12 @@ function ParticipantCard({
         {status !== 'idle' && (
           <span
             className={clsx('absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-1', status === 'typing' && 'animate-pulse')}
-            style={{ background: status === 'typing' ? meta.color : status === 'done' ? '#10A37F' : '#374151' }}
+            style={{ background: dotColor[status] }}
           />
         )}
       </div>
       <div className="min-w-0">
-        <p className="text-xs font-semibold" style={{ color: status === 'idle' ? '#6B7280' : meta.color }}>
+        <p className="text-xs font-semibold" style={{ color: status === 'idle' ? '#6B7280' : status === 'error' ? '#EF4444' : meta.color }}>
           {meta.shortName}
         </p>
         {status !== 'idle' && (
@@ -222,7 +224,7 @@ function FollowUpBubble({ item }: { item: FollowUpItem }) {
 
 // ─── Empty State (with discussion history) ────────
 function DiscussEmptyState({ onStart, onLoad, onDelete }: {
-  onStart: (topic: string, roles: Record<string, string>, imageData?: string) => void;
+  onStart: (topic: string, roles: Record<string, string>, imageData?: string, useSearch?: boolean) => void;
   onLoad: (id: string) => void;
   onDelete?: (id: string) => void
 }) {
@@ -235,6 +237,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
     'deepseek-chat': '严厉批评者'
   })
   const [showRoleSetting, setShowRoleSetting] = useState(false)
+  const [useSearch, setUseSearch] = useState(false)
 
   const [attachment, setAttachment] = useState<{ type: 'image' | 'text'; name: string; content: string } | null>(null)
   const [fileError, setFileError] = useState('')
@@ -290,16 +293,14 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
     const t = topic.trim()
     if (!t && !attachment) return
     if (attachment?.type === 'image') {
-      // 图片：通过 image 字段传递，topic 保持文字内容
       const finalTopic = t || `请分析这张图片的内容`
-      onStart(finalTopic, modelRoles, attachment.content)
+      onStart(finalTopic, modelRoles, attachment.content, useSearch)
     } else if (attachment?.type === 'text') {
-      // 文本文件：拼入 topic
       const fileContext = `\`\`\`${attachment.name}\n${attachment.content}\n\`\`\``
       const finalTopic = t ? `${fileContext}\n\n${t}` : `请分析以下文件内容：\n\n${fileContext}`
-      onStart(finalTopic, modelRoles)
+      onStart(finalTopic, modelRoles, undefined, useSearch)
     } else {
-      onStart(t, modelRoles)
+      onStart(t, modelRoles, undefined, useSearch)
     }
   }
 
@@ -388,6 +389,17 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
                 title="上传文件或图片作为讨论素材"
               >
                 <Paperclip size={14} strokeWidth={1.8} />
+              </button>
+              {/* 联网搜索开关 */}
+              <button
+                onClick={() => setUseSearch(prev => !prev)}
+                className={clsx(
+                  "p-1 rounded-lg transition-colors flex-shrink-0",
+                  useSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
+                )}
+                title={useSearch ? "已开启联网搜索" : "点击开启联网搜索"}
+              >
+                <Globe size={14} strokeWidth={useSearch ? 2.5 : 1.8} />
               </button>
               <input
                 ref={fileInputRef}
@@ -525,21 +537,24 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
   const [messages, setMessages] = useState<DiscussMessage[]>([])
   const [typingModels, setTypingModels] = useState<ModelId[]>([])
-  const [modelStatus, setModelStatus] = useState<Record<ModelId, 'waiting' | 'typing' | 'done' | 'idle'>>({
+  const [modelStatus, setModelStatus] = useState<Record<ModelId, 'waiting' | 'typing' | 'done' | 'idle' | 'error'>>({
     'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle',
   })
   const [consensusContent, setConsensusContent] = useState('')
   const [searchSources, setSearchSources] = useState<{ title: string; url: string }[]>([])
+  const [modelErrors, setModelErrors] = useState<ModelError[]>([])
   const [followUpItems, setFollowUpItems] = useState<FollowUpItem[]>([])
   const [followUpInput, setFollowUpInput] = useState('')
   const [isFollowingUp, setIsFollowingUp] = useState(false)
   const [followUpAttachment, setFollowUpAttachment] = useState<{ type: 'image' | 'text'; name: string; content: string } | null>(null)
   const [followUpFileError, setFollowUpFileError] = useState('')
+  const [useFollowUpSearch, setUseFollowUpSearch] = useState(false)
   const followUpFileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const followUpAbortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(sessionId || null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const isAutoScrollRef = useRef(true)
 
   // Refs to avoid closure traps in saveDiscussion
   const topicRef = useRef(topic)
@@ -549,8 +564,18 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   messagesRef.current = messages
   consensusRef.current = consensusContent
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget
+    // 如果滚动到底部（阈值 100px），重新开启自动滚动；否则锁定不滚动
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100
+    isAutoScrollRef.current = isAtBottom
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isAutoScrollRef.current) {
+      // 使用默认的 auto 或者 smooth，平滑更舒适，且不打断用户阅读
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
   }, [messages, typingModels, consensusContent, followUpItems])
 
   // 加载历史讨论（仅在 active 且 sessionId 变化时触发）
@@ -633,13 +658,14 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     } catch { /* 静默 */ }
   }, [])
 
-  const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>, imageData?: string) => {
+  const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>, imageData?: string, use_search = false) => {
     setTopic(t)
     setRoles(assignedRoles)
     setPhase('round1')
     setMessages([])
     setConsensusContent('')
     setSearchSources([])
+    setModelErrors([])
     setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-chat': 'waiting' })
     setTypingModels([])
 
@@ -651,7 +677,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
     try {
       abortRef.current = new AbortController()
-      const reqBody: any = { topic: t, models: MODELS, rounds: 2, roles: assignedRoles }
+      const reqBody: any = { topic: t, models: MODELS, rounds: 2, roles: assignedRoles, use_search }
       if (imageData) reqBody.image = imageData
       const res = await apiFetch('/api/discuss', {
         method: 'POST',
@@ -726,10 +752,16 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 const model = evt.model as ModelId
                 const round = evt.round as number
                 const key = `r${round}-${model}`
-                setModelStatus(prev => ({ ...prev, [model]: 'done' }))
+                setModelStatus(prev => ({ ...prev, [model]: prev[model] === 'error' ? 'error' : 'done' }))
                 setMessages(prev =>
                   prev.map(m => m.id === key ? { ...m, isStreaming: false } : m)
                 )
+                break
+              }
+
+              case 'model_error': {
+                const errModel = evt.model as ModelId
+                setModelStatus(prev => ({ ...prev, [errModel]: 'error' }))
                 break
               }
 
@@ -737,6 +769,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 setPhase('consensus')
                 finalConsensus += evt.content || ''
                 setConsensusContent(prev => prev + evt.content)
+                break
+              }
+
+              case 'errors_summary': {
+                if (Array.isArray(evt.errors)) {
+                  setModelErrors(evt.errors as ModelError[])
+                }
                 break
               }
 
@@ -802,11 +841,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setMessages([])
     setConsensusContent('')
     setSearchSources([])
+    setModelErrors([])
     setFollowUpItems([])
     setFollowUpInput('')
     setIsFollowingUp(false)
     setFollowUpAttachment(null)
     setFollowUpFileError('')
+    setUseFollowUpSearch(false)
     setTypingModels([])
     setModelStatus({ 'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle' })
     navigate('/discuss', { replace: true })
@@ -862,7 +903,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       finalQuestion = '请分析这张图片的内容'
     }
 
-    const followUpReqBody: any = { question: finalQuestion, topic: topicRef.current, context, models: MODELS }
+    const followUpReqBody: any = { question: finalQuestion, topic: topicRef.current, context, models: MODELS, use_search: useFollowUpSearch }
     if (currentFollowUpAttachment?.type === 'image') {
       followUpReqBody.image = currentFollowUpAttachment.content
     }
@@ -1028,7 +1069,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       </header>
 
       {/* Discussion feed */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="max-w-3xl mx-auto px-5 py-6 space-y-4">
 
           {/* Round 1 */}
@@ -1077,11 +1118,12 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             <>
               <div className="flex items-center gap-3 py-2 animate-scale-reveal">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
-                <span className="text-xs gradient-text-gemini font-semibold tracking-wide">四方共识</span>
+                <span className="text-xs gradient-text-gemini font-semibold tracking-wide">多方共识</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
               </div>
               <ConsensusCard
                 content={consensusContent}
+                errors={modelErrors}
                 onSave={(newVal) => {
                   setConsensusContent(newVal);
                   setTimeout(() => saveDiscussion(), 50);
@@ -1129,6 +1171,19 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 >
                   <Paperclip size={13} strokeWidth={1.8} />
                 </button>
+                {/* 追问联网搜索开关 */}
+                <button
+                  onClick={() => setUseFollowUpSearch(prev => !prev)}
+                  className={clsx(
+                    "p-0.5 rounded-lg transition-colors flex-shrink-0",
+                    isFollowingUp ? "opacity-50 cursor-not-allowed text-text-5" :
+                    useFollowUpSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
+                  )}
+                  title={useFollowUpSearch ? "已开启联网搜索" : "点击开启联网搜索"}
+                  disabled={isFollowingUp}
+                >
+                  <Globe size={13} strokeWidth={useFollowUpSearch ? 2.5 : 1.8} />
+                </button>
                 <input
                   ref={followUpFileRef}
                   type="file"
@@ -1162,7 +1217,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 新议题
               </button>
             </div>
-            <p className="text-xs text-text-5 pl-1">讨论已完成 · 基于 2 轮对话达成四方共识 · 可继续追问主持人</p>
+            <p className="text-xs text-text-5 pl-1">讨论已完成 · 基于 2 轮对话达成多方共识 · 可继续追问主持人</p>
           </div>
         </div>
       )}

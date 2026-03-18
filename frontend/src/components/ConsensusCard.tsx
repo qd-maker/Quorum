@@ -6,10 +6,12 @@ import clsx from 'clsx'
 
 interface Props {
   content: string
+  errors?: { model: string; error: string }[]
+  participantCount?: number
   onSave?: (newContent: string) => void
 }
 
-export default function ConsensusCard({ content, onSave }: Props) {
+export default function ConsensusCard({ content, errors = [], participantCount = 4, onSave }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(content)
 
@@ -33,14 +35,22 @@ export default function ConsensusCard({ content, onSave }: Props) {
           </div>
           <div className="flex-1">
             <h3 className="font-display font-bold text-lg tracking-tight bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
-              Quorum 四方共识摘要
+              Quorum 多方共识摘要
             </h3>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-[10px] text-text-4 font-medium uppercase tracking-wider">验证模型:</span>
               <div className="flex gap-1">
-                {(['gpt', 'gemini', 'grok', 'deepseek'] as const).map(m => (
-                  <div key={m} className={clsx(clsx_model(m), "ring-1 ring-white/10")} title={m.toUpperCase()} />
-                ))}
+                {(['gpt', 'gemini', 'grok', 'deepseek'] as const).map(m => {
+                  const modelId = m === 'gpt' ? 'gpt-4o' : m === 'gemini' ? 'gemini-2.0-flash' : m === 'grok' ? 'grok-2' : 'deepseek-chat'
+                  const hasError = errors.some(e => e.model === modelId)
+                  return (
+                    <div
+                      key={m}
+                      className={clsx(clsx_model(m), 'ring-1 ring-white/10', hasError && 'opacity-40 ring-red-500/60')}
+                      title={hasError ? `${m.toUpperCase()} 出错` : m.toUpperCase()}
+                    />
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -94,6 +104,18 @@ export default function ConsensusCard({ content, onSave }: Props) {
             <MarkdownRenderer content={content} />
           </div>
         )}
+
+        {/* Error Warning Banner */}
+        {errors.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-white/5 space-y-1.5">
+            {errors.map(({ model, error }) => (
+              <div key={model} className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/8 border border-red-500/20 text-xs text-red-300">
+                <span className="mt-0.5 flex-shrink-0">⚠️</span>
+                <span><span className="font-semibold">{modelLabel(model)}</span> 未参与讨论：{truncateError(error)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -109,3 +131,18 @@ function clsx_model(m: 'gpt' | 'gemini' | 'grok' | 'deepseek') {
   return `w-2 h-2 rounded-full ${colors[m]}`
 }
 
+function modelLabel(modelId: string): string {
+  const map: Record<string, string> = {
+    'gpt-4o': 'GPT',
+    'gemini-2.0-flash': 'Gemini',
+    'grok-2': 'Grok',
+    'deepseek-chat': 'DeepSeek',
+  }
+  return map[modelId] ?? modelId
+}
+
+function truncateError(err: string): string {
+  // 提取锁关带信息，去掉唐漫的堆栈跟踪
+  const clean = err.replace(/Error:\s*/gi, '').split('\n')[0]
+  return clean.length > 80 ? clean.slice(0, 80) + '…' : clean
+}

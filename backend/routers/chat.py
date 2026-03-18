@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     model: str
     messages: list[dict]
     stream: bool = True
+    use_search: bool = False
 
 
 def _build_system_prompt(search_ctx: str) -> str:
@@ -54,11 +55,10 @@ async def chat(req: ChatRequest):
         "",
     )
 
-    # 实时搜索注入
+    # 实时搜索注入（仅在前端明确开启时）
     search_ctx = ""
     search_sources: list[dict] = []
-    should_search = needs_search(last_user_msg) or len(last_user_msg) > 5
-    if should_search:
+    if req.use_search:
         try:
             results = await search_web(last_user_msg, max_results=5)
             search_ctx = format_search_context(results, last_user_msg)

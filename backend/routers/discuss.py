@@ -24,6 +24,7 @@ class DiscussRequest(BaseModel):
     rounds: int = 2
     roles: dict[str, str] = {}  # model_id -> role_description (可选)
     image: str | None = None    # base64 data URL (可选，用于图片分析)
+    use_search: bool = False    # 强制开启联网搜索
 
 
 class FollowUpRequest(BaseModel):
@@ -32,6 +33,7 @@ class FollowUpRequest(BaseModel):
     context: str  # 前端传入的完整讨论文本（各轮内容 + 共识）
     models: list[str] = DEFAULT_MODELS
     image: str | None = None    # base64 data URL (可选)
+    use_search: bool = False
 
 
 @router.post("/discuss")
@@ -46,7 +48,7 @@ async def discuss(req: DiscussRequest):
 
     async def event_stream():
         try:
-            async for event in run_discussion(req.topic, req.models, req.rounds, roles=req.roles, image=req.image):
+            async for event in run_discussion(req.topic, req.models, req.rounds, roles=req.roles, image=req.image, use_search=req.use_search):
                 yield event
         except Exception as e:
             logger.exception("Discussion stream error")
@@ -79,7 +81,7 @@ async def discuss_followup(req: FollowUpRequest):
 
     async def event_stream():
         try:
-            async for event in run_followup(req.question, req.topic, req.context, valid_models, image=req.image):
+            async for event in run_followup(req.question, req.topic, req.context, valid_models, image=req.image, use_search=req.use_search):
                 yield event
         except Exception as e:
             logger.exception("Followup stream error")

@@ -1,4 +1,4 @@
-"""群聊讨论编排器 — Round 1 并行 → Round 2 串行 → 共识生成.
+"""群聊讨论编排器 — Round 1 并发 → Round 2 并发 → 多方共识生成.
 
 通过 asyncio.Queue 保证并行推送的 SSE 事件有序。
 """
@@ -170,20 +170,20 @@ async def run_discussion(
     models: list[str],
     rounds: int = 2,
     roles: dict[str, str] = {},
-    force_search: bool = False,
+    use_search: bool = False,
     image: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """执行完整讨论流程，yield SSE 格式字符串."""
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     all_views: dict[str, list[str]] = {m: [] for m in models}
+    model_errors: dict[str, str] = {}  # 记录报错的模型及原因
 
     # ── 搜索预处理 ──────────────────────────────────
     search_ctx = ""
     results: list[dict] = []
-    # 默认开启搜索，仅纯理论话题跳过
-    should_search = force_search or needs_search(topic) or len(topic) > 5
-    if should_search:
+    # 仅在明确开启 search 时搜索
+    if use_search:
         logger.info(f"Triggering web search for topic: {topic[:50]}")
         try:
             results = await search_web(topic, max_results=5)
@@ -221,13 +221,21 @@ async def run_discussion(
                 await queue.put(
                     _sse({"type": "model_chunk", "model": model, "round": 1, "content": chunk})
                 )
+            
+            if not accumulated.strip():
+                raise ValueError("API 正常返回但未产生任何有效内容 (空回复)")
+
             all_views[model].append(accumulated)
             await queue.put(
                 _sse({"type": "model_done", "model": model, "round": 1})
             )
         except Exception as e:
             logger.exception(f"Round 1 error for {model}")
-            all_views[model].append(accumulated or f"[错误: {e}]")
+            err_msg = str(e)
+            model_errors[model] = err_msg
+            await queue.put(
+                _sse({"type": "model_error", "model": model, "round": 1, "error": err_msg})
+            )
             await queue.put(
                 _sse({"type": "model_done", "model": model, "round": 1})
             )
@@ -261,44 +269,90 @@ async def run_discussion(
     # 确保所有任务完成
     await asyncio.gather(*tasks, return_exceptions=True)
 
-    # ── Round 2：串行 ──────────────────────────────
+    # ── Round 2：并发 ──────────────────────────────
 
     if rounds >= 2:
         yield _sse({"type": "round_start", "round": 2})
 
-        try:
-            for model in models:
+        async def _stream_model_r2(model: str):
+            """单个模型的 Round 2 流式输出，推入 queue."""
+            accumulated = ""
+            try:
                 others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
                 role_desc = roles.get(model, "")
                 system = _round2_system(model, topic, others, role_desc)
                 messages = [{"role": "user", "content": f"请回应其他模型并深化讨论议题「{topic}」。"}]
 
-                accumulated = ""
-                try:
-                    async for chunk in stream_chat(model, messages, system):
-                        accumulated += chunk
-                        yield _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
-                    all_views[model].append(accumulated)
-                except Exception as e:
-                    logger.exception(f"Round 2 error for {model}")
-                    all_views[model].append(accumulated or f"[错误: {e}]")
+                async for chunk in stream_chat(model, messages, system):
+                    accumulated += chunk
+                    await queue.put(
+                        _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
+                    )
+                
+                if not accumulated.strip():
+                    raise ValueError("API 正常返回但未产生任何有效内容 (空回复)")
 
-                yield _sse({"type": "model_done", "model": model, "round": 2})
+                all_views[model].append(accumulated)
+                await queue.put(
+                    _sse({"type": "model_done", "model": model, "round": 2})
+                )
+            except Exception as e:
+                logger.exception(f"Round 2 error for {model}")
+                err_msg = str(e)
+                if model not in model_errors:
+                    model_errors[model] = err_msg
+                await queue.put(
+                    _sse({"type": "model_error", "model": model, "round": 2, "error": err_msg})
+                )
+                await queue.put(
+                    _sse({"type": "model_done", "model": model, "round": 2})
+                )
+
+        try:
+            # 启动并发任务
+            tasks_r2 = [asyncio.create_task(_stream_model_r2(m)) for m in models]
+
+            done_count_r2 = 0
+            target_done_r2 = len(models)
+
+            while done_count_r2 < target_done_r2:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    # 心跳
+                    yield ": heartbeat\n\n"
+                    continue
+
+                if event is None:
+                    continue
+                yield event
+
+                # 计数 model_done
+                if '"type": "model_done"' in event:
+                    done_count_r2 += 1
+
+            # 确保所有任务完成
+            await asyncio.gather(*tasks_r2, return_exceptions=True)
+            
         except Exception as e:
             logger.exception(f"Round 2 fatal error: {e}")
 
-    # ── Phase 1：观点总结（每个模型总结自己的核心观点）──────
+    # ── Phase 1：观点总结（每个模型总结自己的核心观点，并发执行）──────
 
     try:
         yield _sse({"type": "consensus_phase", "phase": "summarizing"})
         model_summaries: dict[str, str] = {}
 
-        for model in models:
+        async def _summarize_model(model: str) -> tuple[str, str]:
+            # 跳过报错的模型
+            if model in model_errors:
+                logger.info(f"Skipping summary for errored model {_get_base_name(model)}")
+                return model, ""
             base_name = _get_base_name(model)
             views = all_views.get(model, [])
             if not views or all(not v.strip() for v in views):
                 logger.warning(f"No views for {base_name}, skipping summary")
-                continue
+                return model, ""
 
             # 把该模型的发言拼成 user message
             view_parts = []
@@ -311,14 +365,36 @@ async def run_discussion(
 
             try:
                 summary = await complete_chat(model, messages, system)
-                model_summaries[model] = summary
                 logger.info(f"  {base_name} summary: {len(summary)} chars")
+                return model, summary
             except Exception:
                 # 总结失败时用原始发言的首段兜底
                 logger.warning(f"Summary failed for {base_name}, using truncated original")
-                model_summaries[model] = views[0][:300] + ("…" if len(views[0]) > 300 else "")
-            # 心跳：防止总结阶段长时间无 SSE 事件导致连接超时
-            yield ": heartbeat\n\n"
+                return model, views[0][:300] + ("…" if len(views[0]) > 300 else "")
+
+        # 启动所有的总结任务
+        summarize_tasks = [asyncio.create_task(_summarize_model(m)) for m in models]
+        
+        # 使用 wait 管理任务完成和心跳
+        while summarize_tasks:
+            done, pending = await asyncio.wait(
+                summarize_tasks, 
+                timeout=5.0, 
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            for task in done:
+                try:
+                    m, s = task.result()
+                    if s:
+                        model_summaries[m] = s
+                except Exception as e:
+                    logger.exception(f"Summarize task error: {e}")
+                    
+            summarize_tasks = list(pending)
+            if summarize_tasks:
+                yield ": heartbeat\n\n"
+
     except Exception as e:
         logger.exception(f"Summarization phase fatal error: {e}")
         # 兜底：如果总结阶段完全崩溃，用原始发言截断作为总结
@@ -339,7 +415,10 @@ async def run_discussion(
         logger.info(f"Consensus payload: {len(model_summaries)} summaries, {total_chars} total chars")
         consensus_generated = False
 
-        for consensus_model in models:
+        # 优先用未报错的模型生成共识
+        healthy_models = [m for m in models if m not in model_errors]
+        fallback_models = [m for m in models if m in model_errors]
+        for consensus_model in healthy_models + fallback_models:
             try:
                 logger.info(f"Trying consensus generation with {consensus_model}")
                 consensus_text = await complete_chat(consensus_model, consensus_msgs, consensus_system)
@@ -362,6 +441,13 @@ async def run_discussion(
         logger.exception(f"Consensus phase fatal error: {e}")
         yield _sse({"type": "consensus_chunk", "content": f"[共识生成异常: {e}]"})
 
+    # 发送错误摘要（如有）
+    if model_errors:
+        error_list = [
+            {"model": m, "error": e} for m, e in model_errors.items()
+        ]
+        yield _sse({"type": "errors_summary", "errors": error_list})
+
     yield _sse({"type": "done"})
 
 
@@ -373,6 +459,7 @@ async def run_followup(
     context: str,
     models: list[str],
     image: str | None = None,
+    use_search: bool = False,
 ) -> AsyncGenerator[str, None]:
     """基于完整讨论上下文，以主持人身份回答用户追问."""
     system = _followup_system(topic)

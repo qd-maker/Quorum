@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
-import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon } from 'lucide-react'
+import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon, Globe } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, ChatMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
@@ -170,12 +170,14 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
   const [isDragging, setIsDragging] = useState(false)
   const [fileError, setFileError] = useState('')
   const [chatSources, setChatSources] = useState<{ title: string; url: string }[]>([])
+  const [useSearch, setUseSearch] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<(ChatMessage & { isStreaming?: boolean })[]>([])
   const modelRef = useRef<ModelId>(model)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isAutoScrollRef = useRef(true)
   const [, forceUpdate] = useReducer(x => x + 1, 0)
 
   // Re-render when API config changes (model names)
@@ -196,8 +198,16 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     })
   }
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100
+    isAutoScrollRef.current = isAtBottom
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isAutoScrollRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
   }, [messages, isTyping])
 
   // 加载历史会话
@@ -373,7 +383,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: apiMessages, stream: true }),
+        body: JSON.stringify({ model, messages: apiMessages, stream: true, use_search: useSearch }),
         signal: abortRef.current.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -472,7 +482,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         {messages.length === 0 ? (
           <EmptyState model={model} onSend={(text) => handleSend(text)} />
         ) : (
@@ -528,6 +538,17 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
               title="上传文件或图片"
             >
               <Paperclip size={16} strokeWidth={1.8} />
+            </button>
+            {/* 联网搜索开关 */}
+            <button
+              onClick={() => setUseSearch(prev => !prev)}
+              className={clsx(
+                "p-1 rounded-lg transition-colors flex-shrink-0 mb-0.5",
+                useSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
+              )}
+              title={useSearch ? "已开启联网搜索" : "点击开启联网搜索"}
+            >
+              <Globe size={16} strokeWidth={useSearch ? 2.5 : 1.8} />
             </button>
             <input
               ref={fileInputRef}
