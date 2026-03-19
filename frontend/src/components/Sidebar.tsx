@@ -2,17 +2,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Users, Trash2, Settings, Search,
-  PanelLeftClose, PanelLeft, Bot, MessageSquare, LogOut
+  PanelLeftClose, PanelLeft, Bot, MessageSquare, LogOut,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { HistoryItem, ModelId } from '../types'
-import { MODEL_META } from '../types'
 import ApiSettingsModal from './ApiSettingsModal'
 import ThemeToggle from './ThemeToggle'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
-// ─── Logo ────────────────────────────────────────
 function Logo() {
   return (
     <div className="flex items-center gap-2.5 px-2 py-1 text-text-1 cursor-pointer rounded-lg">
@@ -24,7 +22,6 @@ function Logo() {
   )
 }
 
-// ─── Constants ───────────────────────────────────
 const CHAT_MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
 const MODEL_LABEL: Record<ModelId, string> = {
   'gpt-4o': 'GPT 对话',
@@ -33,7 +30,6 @@ const MODEL_LABEL: Record<ModelId, string> = {
   'deepseek-chat': 'DeepSeek 对话',
 }
 
-// ─── Model History Group ──────────────────────────
 function ModelHistoryGroup({
   modelId, items, onDelete,
 }: {
@@ -43,6 +39,7 @@ function ModelHistoryGroup({
 }) {
   const navigate = useNavigate()
   if (items.length === 0) return null
+
   return (
     <div className="mb-5">
       <div className="px-3 mb-1.5">
@@ -55,7 +52,7 @@ function ModelHistoryGroup({
           <button
             key={item.id}
             onClick={() => navigate(`/chat/${item.id}`)}
-            className="w-full text-left px-3 py-1.5 rounded-lg group transition-colors duration-150 hover:bg-bg-3/60 flex items-center justify-between"
+            className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
           >
             <div className="min-w-0 pr-2">
               <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
@@ -64,7 +61,7 @@ function ModelHistoryGroup({
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
-              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 text-text-5 transition-all flex-shrink-0"
+              className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-5 hover:text-red-400 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 flex-shrink-0"
               title="删除"
             >
               <Trash2 size={12} strokeWidth={2} />
@@ -76,9 +73,15 @@ function ModelHistoryGroup({
   )
 }
 
-// ─── Sidebar Nav + History (shared) ──────────────
 function SidebarInner({
-  searchQuery, setSearchQuery, chatHistory, discussHistory, totalChats, handleDelete, historyFilter, setHistoryFilter,
+  searchQuery,
+  setSearchQuery,
+  chatHistory,
+  discussHistory,
+  totalChats,
+  handleDelete,
+  historyFilter,
+  setHistoryFilter,
 }: {
   searchQuery: string
   setSearchQuery: (q: string) => void
@@ -93,14 +96,14 @@ function SidebarInner({
   const location = useLocation()
   const isChatActive = location.pathname === '/chat' || location.pathname === '/'
   const isDiscussActive = location.pathname.startsWith('/discuss')
+
   return (
     <>
-      {/* 主导航 */}
       <div className="mb-6 rounded-xl border border-white/8 bg-bg-3/40 p-1 flex items-center gap-1">
         <button
           onClick={() => navigate('/chat')}
           className={clsx(
-            'flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200',
+            'press-effect flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
             isChatActive
               ? 'bg-gradient-to-r from-violet-500/80 to-cyan-500/80 text-white shadow-lg shadow-violet-500/20'
               : 'text-text-3 hover:bg-bg-3/60 hover:text-text-1'
@@ -112,7 +115,7 @@ function SidebarInner({
         <button
           onClick={() => navigate('/discuss')}
           className={clsx(
-            'flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200',
+            'press-effect flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
             isDiscussActive
               ? 'bg-gradient-to-r from-violet-500/80 to-cyan-500/80 text-white shadow-lg shadow-violet-500/20'
               : 'text-text-3 hover:bg-bg-3/60 hover:text-text-1'
@@ -125,14 +128,13 @@ function SidebarInner({
 
       <div className="h-px bg-white/5 mb-4 mx-1" />
 
-      {/* 搜索框 */}
       <div className="relative mb-3 mx-1">
         <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-5" />
         <input
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="搜索历史记录..."
-          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none focus:border-violet-500/40 transition-colors"
+          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none focus:border-violet-500/40 focus:ring-2 focus:ring-violet-500/12 focus:bg-bg-3/70 transition-colors"
         />
       </div>
 
@@ -146,7 +148,7 @@ function SidebarInner({
             key={tab.id}
             onClick={() => setHistoryFilter(tab.id)}
             className={clsx(
-              'px-2.5 py-1 rounded-md text-[11px] transition-colors',
+              'rounded-md px-2.5 py-1 text-[11px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40',
               historyFilter === tab.id
                 ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
                 : 'text-text-5 hover:text-text-3 hover:bg-bg-3/50 border border-transparent'
@@ -157,7 +159,6 @@ function SidebarInner({
         ))}
       </div>
 
-      {/* 历史记录 */}
       <div className="flex-1 min-h-0">
         {totalChats === 0 && discussHistory.length === 0 ? (
           <p className="text-[12px] text-text-5 px-3 py-3 text-center">暂无历史记录</p>
@@ -169,57 +170,58 @@ function SidebarInner({
             return <ModelHistoryGroup key={m} modelId={m} items={items} onDelete={handleDelete} />
           })
         )}
+
         {historyFilter !== 'chat' && discussHistory.filter(item =>
           !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase())
         ).length > 0 && (
-            <div className="mb-5">
-              <div className="px-3 mb-1.5">
-                <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
-              </div>
-              <div className="space-y-0.5">
-                {discussHistory
-                  .filter(item => !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => navigate(`/discuss/${item.id}`)}
-                      className="w-full text-left px-3 py-1.5 rounded-lg group transition-colors duration-150 hover:bg-bg-3/60 flex items-center justify-between"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
-                          {item.title}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 text-text-5 transition-all flex-shrink-0"
-                      >
-                        <Trash2 size={12} strokeWidth={2} />
-                      </button>
-                    </button>
-                  ))}
-              </div>
+          <div className="mb-5">
+            <div className="px-3 mb-1.5">
+              <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
             </div>
-          )}
+            <div className="space-y-0.5">
+              {discussHistory
+                .filter(item => !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => navigate(`/discuss/${item.id}`)}
+                    className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
+                        {item.title}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-5 hover:text-red-400 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 flex-shrink-0"
+                      title="删除"
+                    >
+                      <Trash2 size={12} strokeWidth={2} />
+                    </button>
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
 }
 
-// ─── Sidebar Footer (shared) ─────────────────────
 function SidebarFooter({
   setShowSettings,
 }: {
-  showSettings: boolean
   setShowSettings: (s: boolean) => void
 }) {
   const { user, signOut } = useAuth()
+
   return (
     <div className="px-3 pb-4 pt-2 mobile-safe-bottom border-t border-white/5 flex-shrink-0">
       <div className="flex items-center gap-1">
         <button
           onClick={() => setShowSettings(true)}
-          className="flex items-center gap-2.5 px-3 py-2 rounded-lg flex-1 text-left hover:bg-bg-3/60 transition-colors group"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg flex-1 text-left hover:bg-bg-3/60 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45 group"
         >
           <Settings size={15} strokeWidth={1.5} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
           <div className="flex flex-col flex-1 min-w-0">
@@ -231,7 +233,7 @@ function SidebarFooter({
       </div>
       <button
         onClick={signOut}
-        className="mt-1 flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-text-5 hover:text-red-400 hover:bg-red-500/8 transition-colors text-[12px]"
+        className="press-effect mt-1 flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-text-5 hover:text-red-400 hover:bg-red-500/8 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/35 text-[12px]"
       >
         <LogOut size={13} strokeWidth={1.5} />
         退出登录
@@ -240,7 +242,6 @@ function SidebarFooter({
   )
 }
 
-// ─── Sidebar ─────────────────────────────────────
 export default function Sidebar({
   mobileSidebarOpen,
   setMobileSidebarOpen,
@@ -248,7 +249,6 @@ export default function Sidebar({
   mobileSidebarOpen: boolean
   setMobileSidebarOpen: (open: boolean) => void
 }) {
-  const { user, signOut } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' }
     catch { return false }
@@ -267,6 +267,7 @@ export default function Sidebar({
 
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-collapsed', collapsed ? '1' : '0')
+    document.documentElement.style.setProperty('--desktop-sidebar-peek-width', collapsed ? '3.5rem' : '0px')
   }, [collapsed])
 
   const fetchHistory = useCallback(async () => {
@@ -304,7 +305,9 @@ export default function Sidebar({
           createdAt: new Date(s.created_at).getTime(),
         }))
       setDiscussHistory(discussItems)
-    } catch { /* 静默 */ }
+    } catch {
+      /* 静默 */
+    }
   }, [])
 
   useEffect(() => {
@@ -318,21 +321,26 @@ export default function Sidebar({
     try {
       await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
       fetchHistory()
-    } catch { /* 静默 */ }
+    } catch {
+      /* 静默 */
+    }
   }
 
   const totalChats = Object.values(chatHistory).reduce((a, b) => a + b.length, 0)
 
   const innerProps = {
-    searchQuery, setSearchQuery,
-    chatHistory, discussHistory,
-    totalChats, handleDelete,
-    historyFilter, setHistoryFilter,
+    searchQuery,
+    setSearchQuery,
+    chatHistory,
+    discussHistory,
+    totalChats,
+    handleDelete,
+    historyFilter,
+    setHistoryFilter,
   }
 
   return (
     <>
-      {/* ── 移动端侧边栏：固定覆盖抽屉 ── */}
       <aside
         className={clsx(
           'md:hidden fixed inset-y-0 left-0 z-50 w-[300px] max-w-[86vw] bg-bg-1 border-r border-white/10 rounded-r-2xl shadow-2xl flex flex-col mobile-drawer',
@@ -345,7 +353,7 @@ export default function Sidebar({
             <Logo />
             <button
               onClick={() => setMobileSidebarOpen(false)}
-              className="p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3/60 transition-colors"
+              className="press-effect p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3/60 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40"
               title="关闭侧边栏"
             >
               <PanelLeftClose size={17} strokeWidth={1.5} />
@@ -353,10 +361,9 @@ export default function Sidebar({
           </div>
           <SidebarInner {...innerProps} />
         </div>
-        <SidebarFooter showSettings={showSettings} setShowSettings={setShowSettings} />
+        <SidebarFooter setShowSettings={setShowSettings} />
       </aside>
 
-      {/* ── 桌面端侧边栏：max-width + opacity 联动 ── */}
       <aside
         className="hidden md:flex flex-col bg-bg-1 flex-shrink-0 relative group/sidebar overflow-hidden"
         style={{
@@ -371,7 +378,7 @@ export default function Sidebar({
             <Logo />
             <button
               onClick={toggleSidebar}
-              className="p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3/60 transition-colors opacity-0 group-hover/sidebar:opacity-100"
+              className="press-effect p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3/60 transition-all duration-150 opacity-0 group-hover/sidebar:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40"
               title="收起侧边栏"
             >
               <PanelLeftClose size={17} strokeWidth={1.5} />
@@ -379,10 +386,9 @@ export default function Sidebar({
           </div>
           <SidebarInner {...innerProps} />
         </div>
-        <SidebarFooter showSettings={showSettings} setShowSettings={setShowSettings} />
+        <SidebarFooter setShowSettings={setShowSettings} />
       </aside>
 
-      {/* ── 桌面端展开按钮：悬浮覆盖，不再占出一整条空白栏 ── */}
       <div
         className="hidden md:block relative w-0 flex-shrink-0"
         style={{
@@ -394,7 +400,7 @@ export default function Sidebar({
       >
         <button
           onClick={toggleSidebar}
-          className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-bg-2/82 text-text-5 shadow-lg shadow-black/5 backdrop-blur-sm transition-colors hover:bg-bg-3/78 hover:text-text-2"
+          className="press-effect absolute left-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-bg-2/82 text-text-5 shadow-lg shadow-black/5 backdrop-blur-sm transition-all duration-200 hover:-translate-y-[1px] hover:bg-bg-3/78 hover:text-text-2 hover:shadow-xl hover:shadow-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45"
           title="展开侧边栏"
           aria-label="展开侧边栏"
         >

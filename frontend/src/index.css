@@ -688,6 +688,23 @@ body,
   }
 }
 
+/* ─── Motion accessibility polish ───────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer,
+  .desktop-sidebar-aware-header,
+  .page-container,
+  .press-effect {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .press-effect:hover,
+  .press-effect:active {
+    transform: none !important;
+  }
+}
+
 /* ─── Mobile layout spacing fixes ───────────────── */
 @media (max-width: 767px) {
   .mobile-drawer {
