@@ -30,42 +30,76 @@ const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-cha
 
 function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m: ModelId) => void }) {
   const [open, setOpen] = useState(false)
-  const meta = MODEL_META[selected]
   return (
-    <div className="relative w-full max-w-[calc(100vw-8.5rem)] md:w-auto md:max-w-none">
+    <div className="relative min-w-0 flex-1 md:flex-none md:w-auto md:max-w-none z-40">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 px-3 py-2 glass glass-hover rounded-xl text-sm font-medium text-text-2 transition-all max-w-full"
+        className="flex w-full md:w-auto items-center justify-between md:justify-start gap-2 px-3 py-2 glass glass-hover rounded-xl text-sm font-medium text-text-2 transition-all max-w-full"
       >
         <ModelAvatar modelId={selected} size="sm" />
-        <span className="truncate max-w-[9.5rem] md:max-w-none">{getModelDisplayName(selected)}</span>
+        <span className="truncate max-w-[11rem] md:max-w-none">{getModelDisplayName(selected)}</span>
         <ChevronDown size={13} className={clsx('text-text-5 transition-transform flex-shrink-0', open && 'rotate-180')} />
       </button>
       {open && (
-        <div
-          className="absolute top-full left-0 mt-1.5 bg-bg-2 border border-white/10 rounded-xl shadow-card overflow-hidden z-50 animate-fade-in max-w-[calc(100vw-1.5rem)]"
-          style={{ width: 'min(15rem, calc(100vw - 1.5rem))' }}
-        >
-          {MODELS.map(m => {
-            const mm = MODEL_META[m]
-            return (
-              <button
-                key={m}
-                onClick={() => { onChange(m); setOpen(false) }}
-                className={clsx(
-                  'flex items-center gap-3 w-full px-3 py-2.5 text-sm transition-colors',
-                  m === selected ? 'bg-bg-4 text-text-1' : 'text-text-3 hover:bg-bg-3 hover:text-text-2'
-                )}
-              >
-                <ModelAvatar modelId={m} size="sm" />
-                <div className="text-left min-w-0">
-                  <div className="font-medium truncate">{getModelDisplayName(m)}</div>
-                  <div className="text-xs text-text-5 truncate">{mm.description}</div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+        <>
+          <div className="hidden md:block absolute top-full left-0 mt-1.5 bg-bg-2 border border-white/10 rounded-xl shadow-card overflow-hidden z-[70] animate-fade-in min-w-[15rem]">
+            {MODELS.map(m => {
+              const mm = MODEL_META[m]
+              return (
+                <button
+                  key={m}
+                  onClick={() => { onChange(m); setOpen(false) }}
+                  className={clsx(
+                    'flex items-center gap-3 w-full px-3 py-2.5 text-sm transition-colors text-left',
+                    m === selected ? 'bg-bg-4 text-text-1' : 'text-text-3 hover:bg-bg-3 hover:text-text-2'
+                  )}
+                >
+                  <ModelAvatar modelId={m} size="sm" />
+                  <div className="text-left min-w-0">
+                    <div className="font-medium truncate">{getModelDisplayName(m)}</div>
+                    <div className="text-xs text-text-5 truncate">{mm.description}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setOpen(false)}>
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+            <div
+              className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-white/10 bg-bg-1 shadow-2xl px-4 pt-3 pb-5 animate-spring-pop"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-white/10" />
+              <div className="mb-3 px-1 text-sm font-medium text-text-2">选择模型</div>
+              <div className="space-y-2">
+                {MODELS.map(m => {
+                  const mm = MODEL_META[m]
+                  const active = m === selected
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => { onChange(m); setOpen(false) }}
+                      className={clsx(
+                        'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all',
+                        active
+                          ? 'bg-bg-4 border border-violet-500/25 text-text-1'
+                          : 'bg-bg-2/70 border border-white/6 text-text-3 hover:bg-bg-3'
+                      )}
+                    >
+                      <ModelAvatar modelId={m} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{getModelDisplayName(m)}</div>
+                        <div className="text-xs text-text-5 truncate">{mm.description}</div>
+                      </div>
+                      {active && <span className="text-[11px] text-violet-300">当前</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
