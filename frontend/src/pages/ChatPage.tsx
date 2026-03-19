@@ -510,7 +510,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       )}
 
       {/* Header */}
-      <header className="desktop-sidebar-aware-header border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0 px-5 py-3.5">
+      <header className="desktop-sidebar-aware-header border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0 px-5 py-3.5 relative z-30">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="md:hidden h-10 w-10 flex-shrink-0" aria-hidden="true" />
