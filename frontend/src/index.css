@@ -668,14 +668,6 @@ body,
   color: #67e8f9;
 }
 
-/* ─── Mobile header overlap fix ─────────────────── */
-@media (max-width: 767px) {
-  .mobile-switch-discuss,
-  .mobile-switch-chat {
-    margin-left: 0.5rem;
-  }
-}
-
 /* ─── Desktop collapsed sidebar polish ──────────── */
 :root {
   --desktop-sidebar-peek-width: 0px;

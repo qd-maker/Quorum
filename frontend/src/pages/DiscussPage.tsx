@@ -1152,37 +1152,39 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   return (
     <div className="flex flex-col h-full bg-bg-2 quorum-surface">
       {/* Header */}
-      <header className="desktop-sidebar-aware-header flex items-center justify-between pl-16 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/30 flex items-center justify-center flex-shrink-0">
-            <Users size={14} className="text-violet-300" />
+      <header className="desktop-sidebar-aware-header border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0 px-5 py-3.5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="md:hidden h-10 w-10 flex-shrink-0" aria-hidden="true" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/30 flex items-center justify-center flex-shrink-0">
+              <Users size={14} className="text-violet-300" />
+            </div>
+            <span className="text-sm font-medium text-text-1 truncate max-w-xs">{topic}</span>
+            {phase !== 'done' && (
+              <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 animate-pulse">
+                讨论中
+              </span>
+            )}
+            {phase === 'done' && (
+              <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                已完成
+              </span>
+            )}
           </div>
-          <span className="text-sm font-medium text-text-1 truncate max-w-xs">{topic}</span>
-          {phase !== 'done' && (
-            <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 animate-pulse">
-              讨论中
-            </span>
-          )}
-          {phase === 'done' && (
-            <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-              已完成
-            </span>
-          )}
-        </div>
-        <div className="flex items-start md:items-center gap-2 md:gap-3 pt-0.5 md:pt-0">
-          <button
-            onClick={() => navigate('/chat')}
-            className="md:hidden mobile-switch-chat flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
-          >
-            <MessageSquare size={12} />
-            对话
-          </button>
-          {phase !== 'done' && (
-            <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-              SSE 实时协同中
-            </span>
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
+            <button
+              onClick={() => navigate('/chat')}
+              className="md:hidden mobile-switch-chat flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
+            >
+              <MessageSquare size={12} />
+              对话
+            </button>
+            {phase !== 'done' && (
+              <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                SSE 实时协同中
+              </span>
+            )}
           {/* Participant indicators */}
           <div className="hidden md:flex items-center gap-1.5">
             {MODELS.map(m => (
@@ -1212,6 +1214,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             新议题
           </button>
         </div>
+      </div>
       </header>
 
       {/* Discussion feed */}

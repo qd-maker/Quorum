@@ -510,28 +510,33 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       )}
 
       {/* Header */}
-      <header className="desktop-sidebar-aware-header flex items-center justify-between pl-16 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0">
-        <ModelSelector selected={model} onChange={m => {
-          setModel(m)
-          updateMessages(() => [])
-          sessionIdRef.current = null
-        }} />
-        <div className="flex items-start md:items-center gap-2 pt-0.5 md:pt-0">
-          {isStreaming ? (
-            <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-              SSE 实时输出中
-            </span>
-          ) : (
-            <span className="hidden md:inline text-xs text-text-5">单模型对话</span>
-          )}
-          <button
-            onClick={() => navigate('/discuss')}
-            className="md:hidden mobile-switch-discuss flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
-          >
-            <Users size={12} />
-            讨论室
-          </button>
+      <header className="desktop-sidebar-aware-header border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0 px-5 py-3.5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="md:hidden h-10 w-10 flex-shrink-0" aria-hidden="true" />
+            <ModelSelector selected={model} onChange={m => {
+              setModel(m)
+              updateMessages(() => [])
+              sessionIdRef.current = null
+            }} />
+          </div>
+          <div className="flex items-center justify-end md:justify-start gap-2 md:gap-2">
+            {isStreaming ? (
+              <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                SSE 实时输出中
+              </span>
+            ) : (
+              <span className="hidden md:inline text-xs text-text-5">单模型对话</span>
+            )}
+            <button
+              onClick={() => navigate('/discuss')}
+              className="md:hidden mobile-switch-discuss flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
+            >
+              <Users size={12} />
+              讨论室
+            </button>
+          </div>
         </div>
       </header>
 
