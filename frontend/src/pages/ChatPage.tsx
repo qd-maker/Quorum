@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
-import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon, Globe } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon, Globe, Users } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelId, ChatMessage } from '../types'
 import { MODEL_META, getModelDisplayName } from '../types'
@@ -31,17 +32,20 @@ function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m
   const [open, setOpen] = useState(false)
   const meta = MODEL_META[selected]
   return (
-    <div className="relative">
+    <div className="relative w-full max-w-[calc(100vw-8.5rem)] md:w-auto md:max-w-none">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 px-3 py-2 glass glass-hover rounded-xl text-sm font-medium text-text-2 transition-all"
+        className="flex items-center gap-2 px-3 py-2 glass glass-hover rounded-xl text-sm font-medium text-text-2 transition-all max-w-full"
       >
         <ModelAvatar modelId={selected} size="sm" />
-        <span>{getModelDisplayName(selected)}</span>
-        <ChevronDown size={13} className={clsx('text-text-5 transition-transform', open && 'rotate-180')} />
+        <span className="truncate max-w-[9.5rem] md:max-w-none">{getModelDisplayName(selected)}</span>
+        <ChevronDown size={13} className={clsx('text-text-5 transition-transform flex-shrink-0', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 w-52 bg-bg-2 border border-white/10 rounded-xl shadow-card overflow-hidden z-50 animate-fade-in">
+        <div
+          className="absolute top-full left-0 mt-1.5 bg-bg-2 border border-white/10 rounded-xl shadow-card overflow-hidden z-50 animate-fade-in max-w-[calc(100vw-1.5rem)]"
+          style={{ width: 'min(15rem, calc(100vw - 1.5rem))' }}
+        >
           {MODELS.map(m => {
             const mm = MODEL_META[m]
             return (
@@ -54,9 +58,9 @@ function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m
                 )}
               >
                 <ModelAvatar modelId={m} size="sm" />
-                <div className="text-left">
-                  <div className="font-medium">{getModelDisplayName(m)}</div>
-                  <div className="text-xs text-text-5">{mm.description}</div>
+                <div className="text-left min-w-0">
+                  <div className="font-medium truncate">{getModelDisplayName(m)}</div>
+                  <div className="text-xs text-text-5 truncate">{mm.description}</div>
                 </div>
               </button>
             )
@@ -123,7 +127,7 @@ function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStream
             sources={sources}
           />
           {!msg.isStreaming && (
-            <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+            <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity">
               <CopyButton content={msg.content} className="p-1 hover:bg-white/10" />
             </div>
           )}
@@ -161,6 +165,7 @@ function EmptyState({ model, onSend }: { model: ModelId; onSend: (text: string) 
 
 // ─── ChatPage ─────────────────────────────────────────
 export default function ChatPage({ active, sessionId }: { active: boolean; sessionId?: string }) {
+  const navigate = useNavigate()
   const [model, setModel] = useState<ModelId>('gpt-4o')
   const [messages, setMessages] = useState<(ChatMessage & { isStreaming?: boolean; attachment?: Attachment })[]>([])
   const [input, setInput] = useState('')
@@ -171,6 +176,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
   const [fileError, setFileError] = useState('')
   const [chatSources, setChatSources] = useState<{ title: string; url: string }[]>([])
   const [useSearch, setUseSearch] = useState(false)
+  const [hasUnseenStreamUpdate, setHasUnseenStreamUpdate] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const messagesRef = useRef<(ChatMessage & { isStreaming?: boolean })[]>([])
@@ -202,6 +208,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     const target = e.currentTarget
     const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100
     isAutoScrollRef.current = isAtBottom
+    if (isAtBottom) setHasUnseenStreamUpdate(false)
   }
 
   useEffect(() => {
@@ -366,6 +373,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     const updatedMessages = [...messages, userMsg]
     updateMessages(() => updatedMessages)
     setInput('')
+    setHasUnseenStreamUpdate(false)
     setIsTyping(true)
 
     // 清空上一轮的搜索来源
@@ -400,6 +408,34 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       let buffer = ''
       let receivedDone = false
       let finalAssistantContent = ''
+      let pendingChunk = ''
+      let flushRaf: number | null = null
+
+      const flushPending = () => {
+        if (!pendingChunk) return
+        const chunk = pendingChunk
+        pendingChunk = ''
+        finalAssistantContent += chunk
+        updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + chunk } : m))
+        if (!isAutoScrollRef.current) setHasUnseenStreamUpdate(true)
+      }
+
+      const scheduleFlush = () => {
+        if (flushRaf !== null) return
+        flushRaf = requestAnimationFrame(() => {
+          flushRaf = null
+          flushPending()
+        })
+      }
+
+      const finalizeFlush = () => {
+        if (flushRaf !== null) {
+          cancelAnimationFrame(flushRaf)
+          flushRaf = null
+        }
+        flushPending()
+      }
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -416,13 +452,14 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           try {
             const data = JSON.parse(payload)
             if (data.content) {
-              finalAssistantContent += data.content
-              updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: m.content + data.content } : m))
+              pendingChunk += data.content
+              scheduleFlush()
             }
             if (data.sources) {
               setChatSources(data.sources)
             }
             if (data.error) {
+              finalizeFlush()
               updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: (m.content || finalAssistantContent) + `\n\n❌ ${data.error}`, isStreaming: false } : m))
               setIsStreaming(false)
               setTimeout(() => saveSession(), 50)
@@ -431,6 +468,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           } catch { /* skip */ }
         }
       }
+      finalizeFlush()
       if (!receivedDone) {
         updateMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: (m.content || finalAssistantContent) + '\n\n⚠️ 本次回复连接异常中断，以下内容可能不完整。', isStreaming: false } : m))
       } else {
@@ -456,7 +494,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
 
   return (
     <div
-      className="flex flex-col h-full bg-bg-2"
+      className="flex flex-col h-full bg-bg-2 quorum-surface"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -472,17 +510,33 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       )}
 
       {/* Header */}
-      <header className="flex items-center justify-between pl-12 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0">
+      <header className="desktop-sidebar-aware-header flex items-center justify-between pl-16 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/50 backdrop-blur-sm flex-shrink-0">
         <ModelSelector selected={model} onChange={m => {
           setModel(m)
           updateMessages(() => [])
           sessionIdRef.current = null
         }} />
-        <span className="text-xs text-text-5">单模型对话</span>
+        <div className="flex items-start md:items-center gap-2 pt-0.5 md:pt-0">
+          {isStreaming ? (
+            <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              SSE 实时输出中
+            </span>
+          ) : (
+            <span className="hidden md:inline text-xs text-text-5">单模型对话</span>
+          )}
+          <button
+            onClick={() => navigate('/discuss')}
+            className="md:hidden mobile-switch-discuss flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
+          >
+            <Users size={12} />
+            讨论室
+          </button>
+        </div>
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
+      <div className="flex-1 overflow-y-auto smooth-scroll relative" onScroll={handleScroll}>
         {messages.length === 0 ? (
           <EmptyState model={model} onSend={(text) => handleSend(text)} />
         ) : (
@@ -496,10 +550,25 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             <div ref={bottomRef} />
           </div>
         )}
+
+        {hasUnseenStreamUpdate && (
+          <button
+            onClick={() => {
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+              setHasUnseenStreamUpdate(false)
+            }}
+            className="absolute right-5 bottom-4 px-3 py-1.5 rounded-full bg-violet-500/90 text-white text-xs shadow-lg shadow-violet-500/25 z-10 press-effect"
+          >
+            <span className="inline-flex items-center gap-1">
+              <ChevronDown size={12} />
+              查看实时输出
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Input */}
-      <div className="flex-shrink-0 px-5 py-4 bg-bg-2/80 backdrop-blur-sm border-t border-white/5">
+      <div className="flex-shrink-0 px-5 py-4 mobile-safe-bottom bg-bg-2/80 backdrop-blur-sm border-t border-white/5">
         <div className="max-w-3xl mx-auto">
 
           {/* 附件预览条 */}
@@ -528,13 +597,13 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           )}
 
           <div className={clsx(
-            'relative flex items-end gap-3 bg-bg-3 border rounded-2xl px-4 py-3 input-glow transition-all',
+            'relative flex items-end gap-3 bg-bg-3 border rounded-2xl px-4 py-3 min-h-[52px] input-glow transition-all',
             isDragging ? 'border-violet-400/50' : 'border-white/8'
           )}>
             {/* 附件按钮 */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 mb-0.5"
+              className="p-2 md:p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 mb-0.5 touch-manipulation press-effect"
               title="上传文件或图片"
             >
               <Paperclip size={16} strokeWidth={1.8} />
@@ -543,7 +612,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             <button
               onClick={() => setUseSearch(prev => !prev)}
               className={clsx(
-                "p-1 rounded-lg transition-colors flex-shrink-0 mb-0.5",
+                "p-2 md:p-1 rounded-lg transition-colors flex-shrink-0 mb-0.5 touch-manipulation press-effect",
                 useSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
               )}
               title={useSearch ? "已开启联网搜索" : "点击开启联网搜索"}
@@ -571,7 +640,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             {isStreaming ? (
               <button
                 onClick={handleStop}
-                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0 bg-red-500/90 hover:bg-red-400 text-white animate-pulse"
+                className="w-10 h-10 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0 bg-red-500/90 hover:bg-red-400 text-white animate-pulse press-effect touch-manipulation"
                 title="停止生成"
               >
                 <Square size={12} fill="currentColor" />
@@ -581,7 +650,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
                 onClick={() => handleSend()}
                 disabled={!canSend}
                 className={clsx(
-                  'w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0',
+                  'w-10 h-10 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0 press-effect touch-manipulation',
                   canSend
                     ? 'bg-violet-500 hover:bg-violet-400 text-white shadow-gemini'
                     : 'bg-bg-5 text-text-5 cursor-not-allowed'

@@ -36,6 +36,24 @@ const RECOMMENDED_PRESETS = [
 ]
 
 
+function toPreviewPlainText(md: string) {
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^\)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^\)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')
+    .replace(/^\s{0,3}\d+[.)]\s+/gm, '')
+    .replace(/\*\*|__/g, '')
+    .replace(/\*|_/g, '')
+    .replace(/>\s?/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+
 function RoleDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -98,8 +116,13 @@ function ParticipantCard({
   return (
     <div
       onClick={onClick}
+      onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        e.currentTarget.style.setProperty('--mx', `${e.clientX - rect.left}px`)
+        e.currentTarget.style.setProperty('--my', `${e.clientY - rect.top}px`)
+      }}
       className={clsx(
-        'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-500',
+        'spotlight-card flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all duration-500',
         status === 'typing' ? 'bg-bg-3 border-white/15' : status === 'error' ? 'bg-red-500/5 border-red-500/20' : 'bg-bg-2 border-white/6',
         onClick && 'cursor-pointer hover:bg-bg-3'
       )}>
@@ -144,6 +167,67 @@ function RoundDivider({ round, label }: { round: number; label: string }) {
   )
 }
 
+function DiscussionStepper({ phase, onJump }: { phase: Phase; onJump?: (step: 1 | 2 | 3) => void }) {
+  const steps = ['观点发散', '交叉讨论', '共识汇总']
+  const currentStep =
+    phase === 'round1' ? 1 :
+      phase === 'round2' ? 2 :
+        phase === 'consensus' ? 3 :
+          phase === 'done' ? 4 : 0
+
+  return (
+    <div className="mb-5 rounded-2xl border border-white/8 bg-bg-3/40 px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles size={12} className="text-violet-400" />
+        <span className="text-[11px] text-text-4 uppercase tracking-wider">讨论进度</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {steps.map((step, idx) => {
+          const stepNo = (idx + 1) as 1 | 2 | 3
+          const done = currentStep > stepNo || phase === 'done'
+          const active = currentStep === stepNo
+          const canJump = currentStep >= stepNo || phase === 'done'
+
+          return (
+            <button
+              key={step}
+              type="button"
+              onClick={() => canJump && onJump?.(stepNo)}
+              className={clsx(
+                'flex-1 flex items-center gap-2 min-w-0 text-left rounded-lg transition-colors',
+                canJump ? 'cursor-pointer hover:bg-white/5' : 'cursor-not-allowed'
+              )}
+            >
+              <div className={clsx(
+                'w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold transition-colors',
+                done
+                  ? 'bg-emerald-500/90 border-emerald-400 text-white'
+                  : active
+                    ? 'bg-violet-500/80 border-violet-400 text-white'
+                    : 'bg-bg-4 border-white/10 text-text-5'
+              )}>
+                {done ? <Check size={11} /> : stepNo}
+              </div>
+              <span className={clsx(
+                'text-xs truncate transition-colors',
+                active ? 'text-text-2' : done ? 'text-emerald-300' : 'text-text-5'
+              )}>
+                {step}
+              </span>
+              {idx < steps.length - 1 && (
+                <div className={clsx(
+                  'flex-1 h-px min-w-3 transition-colors',
+                  currentStep > stepNo ? 'bg-emerald-400/60' : 'bg-white/8'
+                )} />
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Bubble ───────────────────────────────────────
 function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; index?: number; sources?: { title: string; url: string }[] }) {
   const meta = MODEL_META[msg.model]
@@ -175,7 +259,7 @@ function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; 
             sources={sources}
           />
           {!msg.isStreaming && (
-            <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+            <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity">
               <CopyButton content={msg.content} className="p-1 hover:bg-white/10" />
             </div>
           )}
@@ -211,7 +295,7 @@ function FollowUpBubble({ item }: { item: FollowUpItem }) {
               : <span className="opacity-40">正在思考...</span>
             }
             {item.answer && !item.isStreaming && (
-              <div className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity">
                 <CopyButton content={item.answer} className="p-1 hover:bg-white/10" />
               </div>
             )}
@@ -313,7 +397,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
           .map((s: any) => ({
             id: s.id,
             title: s.title || s.topic || '未命名讨论',
-            preview: s.preview || '',
+            preview: toPreviewPlainText(s.preview || s.consensus || ''),
             createdAt: new Date(s.created_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
           }))
         setHistory(items)
@@ -486,7 +570,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
       {history.length > 0 && (
         <div className="w-full max-w-xl mt-8 mb-12">
           <div className="flex items-center gap-2 mb-3 px-1">
-            <Users size={12} className="text-violet-400" />
+            <FileText size={12} className="text-violet-400" />
             <span className="text-xs font-medium text-text-3 uppercase tracking-wider">最近讨论记录</span>
           </div>
           <div className="space-y-2">
@@ -498,13 +582,13 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-500/10 transition-colors">
-                    <Sparkles size={14} className="text-violet-400" />
+                    <FileText size={14} className="text-violet-400" />
                   </div>
                   <div className="flex flex-col items-start min-w-0">
                     <span className="text-sm text-text-2 group-hover:text-text-1 font-medium truncate w-full transition-colors text-left">
                       {item.title}
                     </span>
-                    <span className="text-[10px] text-text-5 truncate w-full text-left">{item.preview}</span>
+                    <span className="text-[11px] text-text-4 truncate w-full text-left">{item.preview || '暂无摘要'}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-3">
@@ -549,11 +633,15 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   const [followUpAttachment, setFollowUpAttachment] = useState<{ type: 'image' | 'text'; name: string; content: string } | null>(null)
   const [followUpFileError, setFollowUpFileError] = useState('')
   const [useFollowUpSearch, setUseFollowUpSearch] = useState(false)
+  const [hasUnseenStreamUpdate, setHasUnseenStreamUpdate] = useState(false)
   const followUpFileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const followUpAbortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(sessionId || null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const round1AnchorRef = useRef<HTMLDivElement>(null)
+  const round2AnchorRef = useRef<HTMLDivElement>(null)
+  const consensusAnchorRef = useRef<HTMLDivElement>(null)
   const isAutoScrollRef = useRef(true)
 
   // Refs to avoid closure traps in saveDiscussion
@@ -569,6 +657,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     // 如果滚动到底部（阈值 100px），重新开启自动滚动；否则锁定不滚动
     const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100
     isAutoScrollRef.current = isAtBottom
+    if (isAtBottom) setHasUnseenStreamUpdate(false)
   }
 
   useEffect(() => {
@@ -666,6 +755,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setConsensusContent('')
     setSearchSources([])
     setModelErrors([])
+    setHasUnseenStreamUpdate(false)
     setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-chat': 'waiting' })
     setTypingModels([])
 
@@ -674,6 +764,42 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     let currentRound = 1
     let receivedDone = false
     let finalConsensus = ''
+    const pendingByMsgId: Record<string, string> = {}
+    let pendingConsensus = ''
+    let flushRaf: number | null = null
+
+    const flushPending = () => {
+      const appendEntries = Object.entries(pendingByMsgId).filter(([, chunk]) => chunk.length > 0)
+      if (appendEntries.length > 0) {
+        const appendMap = Object.fromEntries(appendEntries)
+        setMessages(prev => prev.map(m => appendMap[m.id] ? { ...m, content: m.content + appendMap[m.id] } : m))
+        for (const [id] of appendEntries) pendingByMsgId[id] = ''
+      }
+      if (pendingConsensus) {
+        finalConsensus += pendingConsensus
+        setConsensusContent(prev => prev + pendingConsensus)
+        pendingConsensus = ''
+      }
+      if (!isAutoScrollRef.current && (appendEntries.length > 0 || finalConsensus.length > 0)) {
+        setHasUnseenStreamUpdate(true)
+      }
+    }
+
+    const scheduleFlush = () => {
+      if (flushRaf !== null) return
+      flushRaf = requestAnimationFrame(() => {
+        flushRaf = null
+        flushPending()
+      })
+    }
+
+    const finalizeFlush = () => {
+      if (flushRaf !== null) {
+        cancelAnimationFrame(flushRaf)
+        flushRaf = null
+      }
+      flushPending()
+    }
 
     try {
       abortRef.current = new AbortController()
@@ -736,15 +862,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                   const newMsg: DiscussMessage = {
                     id: key, model, round,
                     role: assignedRoles[model], // 使用本次讨论分配的角色
-                    content: evt.content, isStreaming: true, timestamp: Date.now(),
+                    content: '', isStreaming: true, timestamp: Date.now(),
                   }
                   setMessages(prev => [...prev, newMsg])
-                } else {
-                  // 增量追加
-                  setMessages(prev =>
-                    prev.map(m => m.id === key ? { ...m, content: m.content + evt.content } : m)
-                  )
                 }
+
+                pendingByMsgId[key] = (pendingByMsgId[key] || '') + (evt.content || '')
+                scheduleFlush()
                 break
               }
 
@@ -767,8 +891,8 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
               case 'consensus_chunk': {
                 setPhase('consensus')
-                finalConsensus += evt.content || ''
-                setConsensusContent(prev => prev + evt.content)
+                pendingConsensus += evt.content || ''
+                scheduleFlush()
                 break
               }
 
@@ -781,6 +905,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
               case 'done': {
                 receivedDone = true
+                finalizeFlush()
                 if (finalConsensus) {
                   setConsensusContent(finalConsensus)
                 }
@@ -795,6 +920,8 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         }
       }
 
+      finalizeFlush()
+
       // 仅在未收到正常 done 事件时兜底（连接异常关闭）
       if (!receivedDone) {
         console.warn('SSE stream closed without receiving done event')
@@ -803,6 +930,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         setPhase('idle')
       }
     } catch (err: any) {
+      finalizeFlush()
       if (err.name === 'AbortError') {
         // 中断后保留已接收的消息，标记所有流结束
         setMessages(prev => prev.map(m => ({ ...m, isStreaming: false })))
@@ -998,6 +1126,11 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     }
   }, [phase])
 
+  const handleStepJump = useCallback((step: 1 | 2 | 3) => {
+    const target = step === 1 ? round1AnchorRef.current : step === 2 ? round2AnchorRef.current : consensusAnchorRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
   const r1Messages = messages.filter(m => m.round === 1)
   const r2Messages = messages.filter(m => m.round === 2)
   const showR2Divider = phase === 'round2' || phase === 'consensus' || phase === 'done'
@@ -1017,9 +1150,9 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   }
 
   return (
-    <div className="flex flex-col h-full bg-bg-2">
+    <div className="flex flex-col h-full bg-bg-2 quorum-surface">
       {/* Header */}
-      <header className="flex items-center justify-between pl-12 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0">
+      <header className="desktop-sidebar-aware-header flex items-center justify-between pl-16 md:pl-5 pr-5 py-3.5 border-b border-white/5 bg-bg-1/60 backdrop-blur-sm flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/30 flex items-center justify-center flex-shrink-0">
             <Users size={14} className="text-violet-300" />
@@ -1036,7 +1169,20 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-start md:items-center gap-2 md:gap-3 pt-0.5 md:pt-0">
+          <button
+            onClick={() => navigate('/chat')}
+            className="md:hidden mobile-switch-chat flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs press-effect"
+          >
+            <MessageSquare size={12} />
+            对话
+          </button>
+          {phase !== 'done' && (
+            <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-violet-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              SSE 实时协同中
+            </span>
+          )}
           {/* Participant indicators */}
           <div className="hidden md:flex items-center gap-1.5">
             {MODELS.map(m => (
@@ -1051,7 +1197,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
           {phase !== 'done' && (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-red-500/15 border border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/25 transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-red-500/15 border border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/25 transition-all press-effect touch-manipulation"
               title="停止讨论"
             >
               <Square size={10} fill="currentColor" />
@@ -1060,7 +1206,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
           )}
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all"
+            className="flex items-center gap-1.5 px-3 py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all press-effect touch-manipulation"
           >
             <RotateCcw size={12} />
             新议题
@@ -1069,18 +1215,25 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
       </header>
 
       {/* Discussion feed */}
-      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
+      <div className="flex-1 overflow-y-auto smooth-scroll relative" onScroll={handleScroll}>
         <div className="max-w-3xl mx-auto px-5 py-6 space-y-4">
+          <DiscussionStepper phase={phase} onJump={handleStepJump} />
 
           {/* Round 1 */}
-          <RoundDivider round={1} label="各抒己见" />
+          <div ref={round1AnchorRef}>
+            <RoundDivider round={1} label="各抒己见" />
+          </div>
           {r1Messages.map((msg, i) => <DiscussBubble key={msg.id} msg={msg} index={i} sources={searchSources} />)}
           {typingModels.filter(() => phase === 'round1').map(m => (
             <TypingIndicator key={m} modelId={m} />
           ))}
 
           {/* Round 2 */}
-          {showR2Divider && <RoundDivider round={2} label="深度互动" />}
+          {showR2Divider && (
+            <div ref={round2AnchorRef}>
+              <RoundDivider round={2} label="深度互动" />
+            </div>
+          )}
           {showR2 && r2Messages.map((msg, i) => <DiscussBubble key={msg.id} msg={msg} index={i} sources={searchSources} />)}
           {typingModels.filter(() => phase === 'round2').map(m => (
             <TypingIndicator key={m} modelId={m} label={`${MODEL_META[m].shortName} 正在回应其他模型`} />
@@ -1115,7 +1268,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
           {/* Consensus */}
           {showConsensus && (
-            <>
+            <div ref={consensusAnchorRef}>
               <div className="flex items-center gap-3 py-2 animate-scale-reveal">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
                 <span className="text-xs gradient-text-gemini font-semibold tracking-wide">多方共识</span>
@@ -1124,12 +1277,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               <ConsensusCard
                 content={consensusContent}
                 errors={modelErrors}
+                isStreaming={phase === 'consensus'}
                 onSave={(newVal) => {
                   setConsensusContent(newVal);
                   setTimeout(() => saveDiscussion(), 50);
                 }}
               />
-            </>
+            </div>
           )}
 
           {/* Follow-up Q&A */}
@@ -1139,11 +1293,26 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
           <div ref={bottomRef} className="h-4" />
         </div>
+
+        {hasUnseenStreamUpdate && (
+          <button
+            onClick={() => {
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+              setHasUnseenStreamUpdate(false)
+            }}
+            className="absolute right-5 bottom-4 px-3 py-1.5 rounded-full bg-violet-500/90 text-white text-xs shadow-lg shadow-violet-500/25 z-10 press-effect"
+          >
+            <span className="inline-flex items-center gap-1">
+              <ChevronDown size={12} />
+              查看实时输出
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Footer: 追问输入框（讨论完成后） */}
       {phase === 'done' && (
-        <div className="flex-shrink-0 px-5 py-3 border-t border-white/5 bg-bg-1/40 backdrop-blur-sm">
+        <div className="flex-shrink-0 px-5 py-3 mobile-safe-bottom border-t border-white/5 bg-bg-1/40 backdrop-blur-sm">
           <div className="max-w-3xl mx-auto space-y-2">
             {/* 追问附件预览 */}
             {followUpAttachment && (
@@ -1165,7 +1334,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               <div className="flex-1 flex items-center gap-2 bg-bg-3 border border-white/10 rounded-xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
                 <button
                   onClick={() => followUpFileRef.current?.click()}
-                  className="p-0.5 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0"
+                  className="p-1.5 md:p-0.5 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 touch-manipulation press-effect"
                   title="上传文件或图片"
                   disabled={isFollowingUp}
                 >
@@ -1175,7 +1344,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 <button
                   onClick={() => setUseFollowUpSearch(prev => !prev)}
                   className={clsx(
-                    "p-0.5 rounded-lg transition-colors flex-shrink-0",
+                    "p-1.5 md:p-0.5 rounded-lg transition-colors flex-shrink-0 touch-manipulation press-effect",
                     isFollowingUp ? "opacity-50 cursor-not-allowed text-text-5" :
                     useFollowUpSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
                   )}
@@ -1204,14 +1373,14 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               <button
                 onClick={handleFollowUp}
                 disabled={(!followUpInput.trim() && !followUpAttachment) || isFollowingUp}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-2.5 md:py-2 rounded-xl text-xs font-medium bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed press-effect touch-manipulation"
               >
                 <Send size={13} />
                 追问
               </button>
               <button
                 onClick={handleReset}
-                className="flex items-center gap-1.5 px-3 py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all"
+                className="flex items-center gap-1.5 px-3 py-2.5 md:py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all press-effect touch-manipulation"
               >
                 <RotateCcw size={12} />
                 新议题
