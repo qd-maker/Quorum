@@ -115,9 +115,15 @@ function CitationBadge({ index, source }: { index: number; source?: SourceItem }
             onMouseEnter={() => setShow(true)}
             onMouseLeave={() => setShow(false)}
         >
-            <sup className="cursor-pointer text-[10px] font-bold text-violet-400 bg-violet-500/15 px-1 py-0.5 rounded-md hover:bg-violet-500/30 transition-all">
+            <a
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cursor-pointer text-[10px] font-bold text-violet-400 bg-violet-500/15 px-1 py-0.5 rounded-md hover:bg-violet-500/30 transition-all !no-underline hover:!text-violet-300"
+                onClick={e => e.stopPropagation()}
+            >
                 {index}
-            </sup>
+            </a>
             {show && (
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 z-50 animate-spring-pop">
                     <span className="block bg-bg-3 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-sm">
@@ -125,16 +131,16 @@ function CitationBadge({ index, source }: { index: number; source?: SourceItem }
                             {source.title}
                         </span>
                         {source.url && (
-                            <a
-                                href={source.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-cyan-400 transition-colors"
-                                onClick={e => e.stopPropagation()}
+                            <span
+                                className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-cyan-400 transition-colors cursor-pointer"
+                                onClick={e => {
+                                    e.stopPropagation()
+                                    window.open(source.url, '_blank', 'noopener,noreferrer')
+                                }}
                             >
                                 <ExternalLink size={9} />
                                 <span className="truncate">{(() => { try { return new URL(source.url).hostname } catch { return source.url } })()}</span>
-                            </a>
+                            </span>
                         )}
                     </span>
                     <span className="absolute left-1/2 -translate-x-1/2 top-full w-2 h-2 bg-bg-3 border-r border-b border-white/10 rotate-45 -mt-1" />

@@ -50,15 +50,23 @@ async def chat(req: ChatRequest):
         raise HTTPException(400, "messages 不能为空")
 
     # 提取最新用户消息用于判断是否需要搜索
-    last_user_msg = next(
+    last_user_msg_raw = next(
         (m["content"] for m in reversed(req.messages) if m.get("role") == "user"),
         "",
     )
+    
+    last_user_msg = ""
+    if isinstance(last_user_msg_raw, list):
+        # 提取 Vision 格式中的文本部分
+        texts = [item.get("text", "") for item in last_user_msg_raw if item.get("type") == "text"]
+        last_user_msg = " ".join(texts).strip()
+    elif isinstance(last_user_msg_raw, str):
+        last_user_msg = last_user_msg_raw.strip()
 
     # 实时搜索注入（仅在前端明确开启时）
     search_ctx = ""
     search_sources: list[dict] = []
-    if req.use_search:
+    if req.use_search and last_user_msg:
         try:
             results = await search_web(last_user_msg, max_results=5)
             search_ctx = format_search_context(results, last_user_msg)

@@ -468,6 +468,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
           <div className="flex items-center justify-between px-3 pb-2">
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
                 title="上传文件或图片作为讨论素材"
@@ -476,6 +477,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
               </button>
               {/* 联网搜索开关 */}
               <button
+                type="button"
                 onClick={() => setUseSearch(prev => !prev)}
                 className={clsx(
                   "p-1 rounded-lg transition-colors flex-shrink-0",
@@ -1336,6 +1338,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
             <div className="flex items-center gap-2">
               <div className="flex-1 flex items-center gap-2 bg-bg-3 border border-white/10 rounded-xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
                 <button
+                  type="button"
                   onClick={() => followUpFileRef.current?.click()}
                   className="p-1.5 md:p-0.5 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 touch-manipulation press-effect"
                   title="上传文件或图片"
@@ -1345,6 +1348,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 </button>
                 {/* 追问联网搜索开关 */}
                 <button
+                  type="button"
                   onClick={() => setUseFollowUpSearch(prev => !prev)}
                   className={clsx(
                     "p-1.5 md:p-0.5 rounded-lg transition-colors flex-shrink-0 touch-manipulation press-effect",

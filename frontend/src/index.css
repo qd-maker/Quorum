@@ -177,10 +177,10 @@
   --bg-4: 229 231 235;
   --bg-5: 209 213 219;
   --text-1: 17 24 39;
-  --text-2: 55 65 81;
-  --text-3: 107 114 128;
-  --text-4: 156 163 175;
-  --text-5: 209 213 219;
+  --text-2: 31 41 55;
+  --text-3: 75 85 99;
+  --text-4: 107 114 128;
+  --text-5: 156 163 175;
 
   --glass-bg: rgba(0, 0, 0, 0.03);
   --glass-bg-hover: rgba(0, 0, 0, 0.06);
@@ -666,6 +666,19 @@ body,
 
 [data-theme="dark"] .mobile-switch-chat {
   color: #67e8f9;
+}
+
+/* ─── History Tab active fix ─── */
+.history-tab-active {
+  background: rgba(168, 85, 247, 0.16);
+  border: 1px solid rgba(168, 85, 247, 0.32) !important;
+  color: #6d28d9;
+}
+
+[data-theme="dark"] .history-tab-active {
+  background: rgba(168, 85, 247, 0.20);
+  border: 1px solid rgba(168, 85, 247, 0.30) !important;
+  color: #c4b5fd;
 }
 
 /* ─── Desktop collapsed sidebar polish ──────────── */

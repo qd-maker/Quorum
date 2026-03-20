@@ -641,6 +641,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
           )}>
             {/* 附件按钮 */}
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               className="p-2 md:p-1 rounded-lg text-text-5 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0 mb-0.5 touch-manipulation press-effect"
               title="上传文件或图片"
@@ -649,6 +650,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
             </button>
             {/* 联网搜索开关 */}
             <button
+              type="button"
               onClick={() => setUseSearch(prev => !prev)}
               className={clsx(
                 "p-2 md:p-1 rounded-lg transition-colors flex-shrink-0 mb-0.5 touch-manipulation press-effect",

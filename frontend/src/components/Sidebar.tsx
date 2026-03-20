@@ -150,7 +150,7 @@ function SidebarInner({
             className={clsx(
               'rounded-md px-2.5 py-1 text-[11px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40',
               historyFilter === tab.id
-                ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                ? 'history-tab-active'
                 : 'text-text-5 hover:text-text-3 hover:bg-bg-3/50 border border-transparent'
             )}
           >

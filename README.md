@@ -17,11 +17,14 @@
 
 ## ✨ Features
 
-- **Single-model Chat** — Stream conversations with GPT-4o, Gemini, Grok, or DeepSeek
-- **AI Group Discussion** — Throw a topic at multiple models simultaneously; they debate in parallel rounds and converge on a **consensus**
-- **User Isolation** — Supabase Auth + per-user session storage; your history is only visible to you
-- **Keep-alive Architecture** — Switch between Chat and Discussion without interrupting ongoing AI streams
-- **Dark / Light Theme** — Persisted per device
+- **Single-model Chat** — Stream conversations with your favorite models (e.g., GPT-4o, Gemini, Grok, DeepSeek).
+- **AI Group Discussion (Multi-Agent)** — Throw a topic at multiple models simultaneously. Watch them debate in parallel rounds and eventually converge on a unified **consensus**.
+- **Web Search Integration (实时联网)** — Toggle the web search button to fetch real-time data using Tavily (or DuckDuckGo fallback). Generated responses automatically include clickable citation badges `[1]` linking directly to the source websites.
+- **File & Image Attachments (多模态与文档)** — Easily upload images and text documents. Images are piped through Vision APIs, while text context is automatically appended—supported in both solo chats and group discussions.
+- **Follow-up Q&A (无缝追问)** — Keep the conversation going. Even after a consensus is reached, you can ask follow-up questions to the multi-agent panel, complete with web search and attachment support.
+- **User Isolation** — Powered by Supabase Auth and Row Level Security (RLS). Your session history and data remain strictly private and tied to your account.
+- **Keep-alive UI Architecture** — Switch between Chat and Discussion views without interrupting ongoing AI streaming generation.
+- **High-Contrast Theming** — Meticulously tuned Dark and Light modes with silky smooth transitions and accessible contrasts.
 
 ---
 
@@ -29,10 +32,10 @@
 
 | Layer | Tech |
 |-------|------|
-| Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
-| Backend | Python 3.11 + FastAPI + SSE streaming |
-| Database | Supabase (PostgreSQL + Auth) |
-| AI | OpenAI-compatible unified API proxy |
+| **Frontend** | React 18 + TypeScript + Vite + Tailwind CSS + Zustand |
+| **Backend** | Python 3.11 + FastAPI + SSE streaming |
+| **Database** | Supabase SDK + PostgreSQL Core |
+| **AI / APIs** | OpenAI-compatible proxies, Tavily Search API |
 
 ---
 
@@ -51,7 +54,7 @@ cd quorum
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit your `.env` (requires your API endpoint and Supabase details):
 
 ```env
 API_BASE_URL=https://api.openai.com/v1   # or compatible proxy
@@ -60,11 +63,14 @@ API_KEY=sk-...
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=<anon key>
 SUPABASE_SERVICE_KEY=<service_role key>
+
+# Optional: Web search config
+TAVILY_API_KEY=tvly-...
 ```
 
 ### 2. Database migration
 
-Run in Supabase SQL Editor:
+Run the following inside your Supabase SQL Editor to set up the schema, Auth rules, and basic RLS policies:
 
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
@@ -98,6 +104,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 
 ```bash
 cd backend
+python -m venv .venv
+# Activate venv: .\.venv\Scripts\activate OR source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
@@ -110,7 +118,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`, register an account, and start chatting.
+Open `http://localhost:5173`, configure your keys in the settings (if necessary), and start chatting!
 
 ---
 
@@ -120,27 +128,18 @@ Open `http://localhost:5173`, register an account, and start chatting.
 quorum/
 ├── backend/
 │   ├── main.py              # FastAPI entry
-│   ├── auth.py              # JWT verification dependency
-│   ├── config.py            # Settings (env-based)
-│   ├── routers/
-│   │   ├── chat.py          # /api/chat  — SSE streaming
-│   │   ├── discuss.py       # /api/discuss — multi-model rounds
-│   │   ├── history.py       # /api/sessions CRUD
-│   │   └── auth_router.py   # /api/auth/login, /register
+│   ├── config.py            # Environment configuration
+│   ├── routers/             # API Endpoints (/chat, /discuss, /auth)
 │   └── services/
-│       ├── history_service.py
-│       ├── model_service.py
-│       └── orchestrator.py  # Parallel AI round orchestration
+│       ├── orchestrator.py  # Parallel AI multi-round orchestration
+│       ├── search_service.py# Tavily/DDG search & context formatting
+│       └── model_service.py # LLM inference streams
 └── frontend/
     ├── src/
-    │   ├── context/AuthContext.tsx
-    │   ├── lib/api.ts        # Authenticated fetch wrapper
-    │   ├── pages/
-    │   │   ├── ChatPage.tsx
-    │   │   ├── DiscussPage.tsx
-    │   │   └── AuthPage.tsx
-    │   └── components/
-    │       └── Sidebar.tsx
+    │   ├── components/      # MarkdownRenderer, Sidebar, etc.
+    │   ├── pages/           # ChatPage, DiscussPage, AuthPage
+    │   ├── lib/api.ts       # SSE and fetch wrappers
+    │   └── context/         # Auth & state management
     └── vite.config.ts
 ```
 
@@ -148,7 +147,7 @@ quorum/
 
 ## 🤝 Contributing
 
-PRs welcome. Please open an issue first for large changes.
+PRs are welcome! Please open an issue first to discuss any large architectural changes.
 
 ---
 

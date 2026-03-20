@@ -463,7 +463,6 @@ async def run_followup(
 ) -> AsyncGenerator[str, None]:
     """基于完整讨论上下文，以主持人身份回答用户追问."""
     system = _followup_system(topic)
-    # 讨论上下文放入 messages，而非 system prompt
     # 追问内容：若有图片则使用 Vision 格式
     if image:
         question_content: str | list = [
@@ -472,8 +471,22 @@ async def run_followup(
         ]
     else:
         question_content = question
+
+    search_ctx = ""
+    if use_search and question:
+        try:
+            results = await search_web(question, max_results=3)
+            search_ctx = format_search_context(results, question)
+        except Exception as e:
+            logger.warning(f"Search failed in followup: {e}")
+            
+    # 将搜索结果附加到上下文中
+    context_str = f"以下是关于「{topic}」的完整讨论记录（含共识）：\n\n{context}"
+    if search_ctx:
+        context_str += f"\n\n{search_ctx}"
+
     messages = [
-        {"role": "user", "content": f"以下是关于「{topic}」的完整讨论记录（含共识）：\n\n{context}"},
+        {"role": "user", "content": context_str},
         {"role": "assistant", "content": "已了解完整讨论内容和共识。请问有什么追问？"},
         {"role": "user", "content": question_content},
     ]
