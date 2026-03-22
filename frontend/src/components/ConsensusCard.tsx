@@ -8,6 +8,7 @@ interface Props {
   content: string
   errors?: { model: string; error: string }[]
   participantCount?: number
+  isStreaming?: boolean
   onSave?: (newContent: string) => void
 }
 

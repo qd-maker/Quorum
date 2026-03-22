@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon, Globe, Users } from 'lucide-react'
 import clsx from 'clsx'
@@ -64,41 +65,44 @@ function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m
             })}
           </div>
 
-          <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setOpen(false)}>
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
-            <div
-              className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-white/10 bg-bg-1 shadow-2xl px-4 pt-3 pb-5 animate-spring-pop"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-white/10" />
-              <div className="mb-3 px-1 text-sm font-medium text-text-2">选择模型</div>
-              <div className="space-y-2">
-                {MODELS.map(m => {
-                  const mm = MODEL_META[m]
-                  const active = m === selected
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => { onChange(m); setOpen(false) }}
-                      className={clsx(
-                        'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all',
-                        active
-                          ? 'bg-bg-4 border border-violet-500/25 text-text-1'
-                          : 'bg-bg-2/70 border border-white/6 text-text-3 hover:bg-bg-3'
-                      )}
-                    >
-                      <ModelAvatar modelId={m} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium truncate">{getModelDisplayName(m)}</div>
-                        <div className="text-xs text-text-5 truncate">{mm.description}</div>
-                      </div>
-                      {active && <span className="text-[11px] text-violet-300">当前</span>}
-                    </button>
-                  )
-                })}
+          {createPortal(
+            <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setOpen(false)}>
+              <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+              <div
+                className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-white/10 bg-bg-1 shadow-2xl px-4 pt-3 pb-5 animate-spring-pop"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-white/10" />
+                <div className="mb-3 px-1 text-sm font-medium text-text-2">选择模型</div>
+                <div className="space-y-2">
+                  {MODELS.map(m => {
+                    const mm = MODEL_META[m]
+                    const active = m === selected
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => { onChange(m); setOpen(false) }}
+                        className={clsx(
+                          'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all',
+                          active
+                            ? 'bg-bg-4 border border-violet-500/25 text-text-1'
+                            : 'bg-bg-2/70 border border-white/6 text-text-3 hover:bg-bg-3'
+                        )}
+                      >
+                        <ModelAvatar modelId={m} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate">{getModelDisplayName(m)}</div>
+                          <div className="text-xs text-text-5 truncate">{mm.description}</div>
+                        </div>
+                        {active && <span className="text-[11px] text-violet-300">当前</span>}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          </div>
+            </div>,
+            document.body
+          )}
         </>
       )}
     </div>
