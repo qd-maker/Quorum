@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Key, Globe, Server, Cpu, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -105,11 +105,25 @@ function Section({ title, children, icon: Icon }: { title: string; children: Rea
 export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
     const [config, setConfig] = useState<ApiConfig>(loadConfig)
     const [saved, setSaved] = useState(false)
+    const [isClosing, setIsClosing] = useState(false)
+    const saveBtnRef = useRef<HTMLButtonElement>(null)
 
     const update = (key: keyof ApiConfig) => (value: string) => {
         setConfig(prev => ({ ...prev, [key]: value }))
         setSaved(false)
     }
+
+    const handleClose = useCallback(() => {
+        setIsClosing(true)
+        setTimeout(onClose, 220)
+    }, [onClose])
+
+    // Esc 键关闭
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose() }
+        window.addEventListener('keydown', handler)
+        return () => window.removeEventListener('keydown', handler)
+    }, [handleClose])
 
     const handleSave = async () => {
         saveConfig(config)
@@ -135,18 +149,28 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
         } catch { /* 静默 */ }
 
         setSaved(true)
+        saveBtnRef.current?.classList.add('save-success')
         window.dispatchEvent(new Event('config-updated'))
-        setTimeout(() => setSaved(false), 2000)
+        setTimeout(() => {
+            setSaved(false)
+            saveBtnRef.current?.classList.remove('save-success')
+        }, 2000)
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={handleClose}>
+            {/* Backdrop — 毛玻璃渐入 */}
+            <div className={clsx(
+                'absolute inset-0 bg-black/60',
+                isClosing ? 'modal-backdrop-exit' : 'modal-backdrop-enter'
+            )} />
 
-            {/* Modal */}
+            {/* Modal — Spring 弹入 */}
             <div
-                className="relative bg-bg-1 border border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl mx-4"
+                className={clsx(
+                    'relative bg-bg-1 border border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl mx-4',
+                    isClosing ? 'modal-panel-exit' : 'modal-panel-enter'
+                )}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -156,8 +180,8 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                         API 设置
                     </h2>
                     <button
-                        onClick={onClose}
-                        className="p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3 transition-all"
+                        onClick={handleClose}
+                        className="p-1.5 rounded-lg text-text-5 hover:text-text-2 hover:bg-bg-3 transition-all duration-150 hover:rotate-90"
                     >
                         <X size={16} />
                     </button>
@@ -257,15 +281,16 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                 <div className="sticky bottom-0 bg-bg-1/95 backdrop-blur-md px-6 py-4 border-t border-white/5 flex items-center justify-between">
                     <p className="text-xs text-text-5">设置保存在浏览器本地</p>
                     <button
+                        ref={saveBtnRef}
                         onClick={handleSave}
                         className={clsx(
-                            'px-5 py-2 rounded-xl text-sm font-semibold transition-all',
+                            'px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-300 btn-ripple',
                             saved
                                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 shadow-gemini'
+                                : 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 hover:shadow-lg hover:shadow-violet-500/20 active:scale-95'
                         )}
                     >
-                        {saved ? '✓ 已保存' : '保存设置'}
+                        <span>{saved ? '✓ 已保存' : '保存设置'}</span>
                     </button>
                 </div>
             </div>

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: str = ""  # service_role key (private, bypasses RLS)
     SUPABASE_JWT_SECRET: str = ""   # JWT secret (Settings > API，用于本地验证 token)
 
+    # CORS 允许的源（逗号分隔，生产环境必填）
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     # 搜索服务
     TAVILY_API_KEY: str = ""       # Tavily 搜索 API key（DuckDuckGo 不稳定时的备用）
 

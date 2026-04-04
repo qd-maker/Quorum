@@ -27,7 +27,7 @@ export default function ConsensusCard({ content, errors = [], participantCount =
   }
 
   return (
-    <div className="border-gradient-glow rounded-3xl p-[1px] animate-fade-in-up animate-glow-pulse mt-4 relative group">
+    <div className="border-gradient-glow rounded-3xl p-[1px] animate-consensus-reveal animate-glow-pulse mt-4 relative group">
       <div className="bg-bg-2 rounded-[23px] px-6 py-5 shadow-2xl">
         {/* Header */}
         <div className="flex items-center gap-3 mb-4">

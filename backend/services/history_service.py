@@ -4,7 +4,7 @@
 避免阻塞 event loop，并减少 TLS 握手开销。
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from supabase import acreate_client, AsyncClient
 
@@ -64,7 +64,7 @@ async def create_session(
 async def update_session(session_id: str, user_id: str, **kwargs) -> dict:
     """更新会话字段（校验归属权）."""
     db = await _get_db()
-    kwargs["updated_at"] = datetime.utcnow().isoformat()
+    kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
     res = await db.table("sessions").update(kwargs) \
         .eq("id", session_id).eq("user_id", user_id).execute()
     return res.data[0] if res.data else {}

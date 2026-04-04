@@ -50,10 +50,10 @@ export default function AuthPage() {
 
     return (
         <div className="flex h-screen bg-bg-0 items-center justify-center px-4">
-            {/* 背景光晕 */}
+            {/* 背景光晕 — 呆吸动画 */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-violet-500/8 blur-3xl" />
-                <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-cyan-500/6 blur-3xl" />
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-violet-500/8 blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+                <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-cyan-500/6 blur-3xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '1s' }} />
             </div>
 
             <div className="relative w-full max-w-sm animate-fade-in-up" style={{ opacity: 0 }}>
@@ -98,7 +98,7 @@ export default function AuthPage() {
                                     onChange={e => setEmail(e.target.value)}
                                     placeholder="your@email.com"
                                     required
-                                    className="w-full bg-bg-2 border border-white/8 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text-1 placeholder:text-text-5 outline-none focus:border-violet-500/40 transition-colors"
+                                    className="w-full bg-bg-2 border border-white/8 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text-1 placeholder:text-text-5 outline-none input-focus-glow"
                                 />
                             </div>
                         </div>
@@ -114,19 +114,19 @@ export default function AuthPage() {
                                     onChange={e => setPassword(e.target.value)}
                                     placeholder={mode === 'register' ? '至少 6 位' : '输入密码'}
                                     required
-                                    className="w-full bg-bg-2 border border-white/8 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text-1 placeholder:text-text-5 outline-none focus:border-violet-500/40 transition-colors"
+                                    className="w-full bg-bg-2 border border-white/8 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text-1 placeholder:text-text-5 outline-none input-focus-glow"
                                 />
                             </div>
                         </div>
 
                         {/* 错误/成功提示 */}
                         {error && (
-                            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 animate-spring-pop">
                                 {error}
                             </p>
                         )}
                         {success && (
-                            <p className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                            <p className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 animate-spring-pop">
                                 {success}
                             </p>
                         )}
@@ -136,9 +136,9 @@ export default function AuthPage() {
                             type="submit"
                             disabled={loading || !email.trim() || !password.trim()}
                             className={clsx(
-                                'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all',
+                                'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 btn-ripple',
                                 !loading && email.trim() && password.trim()
-                                    ? 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 shadow-gemini'
+                                    ? 'bg-gradient-to-r from-violet-500 to-cyan-500 text-white hover:opacity-90 hover:shadow-lg hover:shadow-violet-500/25 active:scale-[0.97]'
                                     : 'bg-bg-3 text-text-5 cursor-not-allowed'
                             )}
                         >

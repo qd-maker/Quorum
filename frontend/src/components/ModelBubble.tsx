@@ -122,8 +122,8 @@ export default function ModelBubble({
 
           {isStreaming && (
             <span
-              className="inline-block w-0.5 h-4 ml-0.5 rounded-full animate-pulse"
-              style={{ background: meta.color }}
+              className="inline-block w-0.5 h-4 ml-0.5 rounded-full stream-cursor"
+              style={{ background: meta.color, boxShadow: `0 0 8px ${meta.color}40` }}
             />
           )}
         </div>

@@ -5,16 +5,19 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import get_settings
 from routers import chat, discuss, history, config_api, auth_router
 
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Quorum", version="0.1.0")
 
-# CORS
+# CORS — 从环境变量读取允许的源，支持生产部署
+settings = get_settings()
+cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

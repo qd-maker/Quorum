@@ -48,11 +48,12 @@ function ModelHistoryGroup({
         </h3>
       </div>
       <div className="space-y-0.5">
-        {items.map(item => (
+        {items.map((item, idx) => (
           <button
             key={item.id}
             onClick={() => navigate(`/chat/${item.id}`)}
-            className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+            className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 history-item-enter"
+            style={{ animationDelay: `${idx * 30}ms` }}
           >
             <div className="min-w-0 pr-2">
               <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
@@ -103,25 +104,25 @@ function SidebarInner({
         <button
           onClick={() => navigate('/chat')}
           className={clsx(
-            'press-effect flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
+            'press-effect btn-ripple flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
             isChatActive
               ? 'bg-gradient-to-r from-violet-500/80 to-cyan-500/80 text-white shadow-lg shadow-violet-500/20'
               : 'text-text-3 hover:bg-bg-3/60 hover:text-text-1'
           )}
         >
-          <MessageSquare size={16} strokeWidth={1.5} />
+          <span><MessageSquare size={16} strokeWidth={1.5} /></span>
           <span>AI 对话</span>
         </button>
         <button
           onClick={() => navigate('/discuss')}
           className={clsx(
-            'press-effect flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
+            'press-effect btn-ripple flex items-center justify-center gap-2.5 flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/45',
             isDiscussActive
               ? 'bg-gradient-to-r from-violet-500/80 to-cyan-500/80 text-white shadow-lg shadow-violet-500/20'
               : 'text-text-3 hover:bg-bg-3/60 hover:text-text-1'
           )}
         >
-          <Users size={16} strokeWidth={1.5} />
+          <span><Users size={16} strokeWidth={1.5} /></span>
           <span>群聊讨论室</span>
         </button>
       </div>
@@ -134,7 +135,7 @@ function SidebarInner({
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="搜索历史记录..."
-          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none focus:border-violet-500/40 focus:ring-2 focus:ring-violet-500/12 focus:bg-bg-3/70 transition-colors"
+          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none input-focus-glow focus:bg-bg-3/70"
         />
       </div>
 
@@ -174,36 +175,37 @@ function SidebarInner({
         {historyFilter !== 'chat' && discussHistory.filter(item =>
           !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase())
         ).length > 0 && (
-          <div className="mb-5">
-            <div className="px-3 mb-1.5">
-              <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
-            </div>
-            <div className="space-y-0.5">
-              {discussHistory
-                .filter(item => !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigate(`/discuss/${item.id}`)}
-                    className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                  >
-                    <div className="min-w-0 pr-2">
-                      <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
-                        {item.title}
-                      </p>
-                    </div>
+            <div className="mb-5">
+              <div className="px-3 mb-1.5">
+                <h3 className="text-[11px] font-medium text-text-5 uppercase tracking-wider">群聊历史</h3>
+              </div>
+              <div className="space-y-0.5">
+                {discussHistory
+                  .filter(item => !searchQuery || item.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .map((item, idx) => (
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-5 hover:text-red-400 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 flex-shrink-0"
-                      title="删除"
+                      key={item.id}
+                      onClick={() => navigate(`/discuss/${item.id}`)}
+                      className="w-full text-left px-3 py-1.5 rounded-lg group flex items-center justify-between transition-all duration-150 hover:bg-bg-3/60 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 history-item-enter"
+                      style={{ animationDelay: `${idx * 30}ms` }}
                     >
-                      <Trash2 size={12} strokeWidth={2} />
+                      <div className="min-w-0 pr-2">
+                        <p className="text-[13px] text-text-3 truncate group-hover:text-text-1 transition-colors">
+                          {item.title}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-5 hover:text-red-400 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 flex-shrink-0"
+                        title="删除"
+                      >
+                        <Trash2 size={12} strokeWidth={2} />
+                      </button>
                     </button>
-                  </button>
-                ))}
+                  ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
     </>
   )

@@ -1031,6 +1031,248 @@ body,
   -webkit-backface-visibility: hidden;
 }
 
+/* ═══════════════════════════════════════════════════
+   Enhanced Micro-Interactions & Silky Animations
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Modal Backdrop Fade ────────────────────────── */
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes backdropFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.modal-backdrop-enter {
+  animation: backdropFadeIn 0.3s var(--ease-out-expo) forwards;
+}
+
+.modal-backdrop-exit {
+  animation: backdropFadeOut 0.2s ease-in forwards;
+}
+
+/* ─── Modal Panel Spring In/Out ──────────────────── */
+@keyframes modalSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.88) translateY(24px);
+    filter: blur(4px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02) translateY(-4px);
+    filter: blur(0);
+  }
+  75% {
+    transform: scale(0.995) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes modalSpringOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92) translateY(16px);
+    filter: blur(3px);
+  }
+}
+
+.modal-panel-enter {
+  animation: modalSpringIn 0.4s var(--spring) forwards;
+}
+
+.modal-panel-exit {
+  animation: modalSpringOut 0.22s ease-in forwards;
+}
+
+/* ─── Input Focus Glow Ring ──────────────────────── */
+.input-focus-glow {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.2s ease;
+}
+
+.input-focus-glow:focus {
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1), 0 0 16px rgba(168, 85, 247, 0.08);
+}
+
+/* ─── History Item Stagger Slide ─────────────────── */
+@keyframes historySlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.history-item-enter {
+  animation: historySlideIn 0.3s var(--ease-out-expo) forwards;
+  opacity: 0;
+}
+
+/* ─── Button Ripple Effect ───────────────────────── */
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.btn-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(255, 255, 255, 0.2) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.btn-ripple:active::after {
+  opacity: 1;
+  transition: opacity 0.05s ease;
+}
+
+.btn-ripple > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Smooth Delete Collapse ─────────────────────── */
+@keyframes deleteCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+    max-height: 60px;
+  }
+  40% {
+    opacity: 0.5;
+    transform: scale(0.97) translateX(8px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) translateX(24px);
+    max-height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+.delete-collapse {
+  animation: deleteCollapse 0.35s var(--ease-out-expo) forwards;
+}
+
+/* ─── Consensus Entrance (enhanced) ──────────────── */
+@keyframes consensusReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+    filter: blur(8px);
+  }
+  40% {
+    opacity: 0.8;
+    filter: blur(1px);
+  }
+  70% {
+    transform: scale(1.01) translateY(-2px);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+.animate-consensus-reveal {
+  animation: consensusReveal 0.6s var(--spring) forwards;
+}
+
+/* ─── Smooth Save Button State Transition ────────── */
+@keyframes saveSuccess {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.06);
+  }
+  60% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.save-success {
+  animation: saveSuccess 0.4s var(--spring);
+}
+
+/* ─── Search Input Expand ────────────────────────── */
+.search-expand {
+  transition: width 0.3s var(--ease-out-expo), padding 0.3s var(--ease-out-expo), background-color 0.2s ease;
+}
+
+/* ─── Tooltip Pop ────────────────────────────────── */
+@keyframes tooltipPop {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tooltip-pop {
+  animation: tooltipPop 0.2s var(--spring) forwards;
+}
+
+/* ─── Streaming Cursor Enhanced ──────────────────── */
+@keyframes streamCursor {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scaleY(0.85);
+  }
+}
+
+.stream-cursor {
+  animation: streamCursor 0.8s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* ─── Tab Switch Indicator Slide ─────────────────── */
+.tab-indicator {
+  transition: left 0.3s var(--spring), width 0.3s var(--spring);
+}
+
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

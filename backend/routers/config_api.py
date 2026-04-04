@@ -2,9 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from auth import get_current_user
 from config import get_settings
 from services.model_service import MODEL_NAME_MAP
 
@@ -26,7 +27,7 @@ class ConfigUpdateRequest(BaseModel):
 
 
 @router.post("/config")
-async def update_config(req: ConfigUpdateRequest):
+async def update_config(req: ConfigUpdateRequest, user_id: str = Depends(get_current_user)):
     """运行时更新 API 配置."""
     s = get_settings()
 
