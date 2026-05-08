@@ -1,38 +1,73 @@
-"""统一模型服务 — 所有模型通过同一个 OpenAI 兼容 API 中转站调用."""
+"""统一模型服务 — 所有模型通过同一个 OpenAI 兼容 API 中转站调用.
+
+per-user client 缓存：每个用户可配置独立的 base_url / api_key / 模型别名，
+互不干扰。无 user_id 时回退到全局 settings（demo / 兼容旧调用）。
+"""
 
 from collections.abc import AsyncGenerator
 
 from openai import AsyncOpenAI
 
-from config import get_settings
+from services.user_config import get_effective_config
 
-# 前端 ID → 实际 API 模型名映射（也作为显示名，用户可通过 /api/config 更新）
+# 前端 ID 别名归一（旧 ID → 新 ID）
+MODEL_ALIASES: dict[str, str] = {
+    "deepseek-chat": "deepseek-r1",
+}
+
+# 兼容性：保留作为「默认模型映射」，新代码请用 user_config.get_user_models()
 MODEL_NAME_MAP: dict[str, str] = {
     "gpt-4o": "gpt-4o",
     "gemini-2.0-flash": "gemini-2.5-flash",
     "grok-2": "grok-4",
-    "deepseek-chat": "deepseek-chat",
+    "deepseek-r1": "deepseek-r1",
+    "deepseek-chat": "deepseek-r1",
 }
 
-_client: AsyncOpenAI | None = None
+# {(base_url, api_key): client}
+_client_cache: dict[tuple[str, str], AsyncOpenAI] = {}
 
 
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        s = get_settings()
-        _client = AsyncOpenAI(base_url=s.API_BASE_URL, api_key=s.API_KEY, timeout=180.0)
-    return _client
+def _client_for(base_url: str, api_key: str) -> AsyncOpenAI:
+    key = (base_url or "", api_key or "")
+    client = _client_cache.get(key)
+    if client is None:
+        client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=180.0)
+        _client_cache[key] = client
+    return client
+
+
+def reset_client() -> None:
+    """清空所有 client 缓存（API 配置变更后调用）."""
+    _client_cache.clear()
+
+
+def normalize_model_id(model: str) -> str:
+    """把旧前端模型 ID 归一到当前规范 ID。"""
+    return MODEL_ALIASES.get(model, model)
+
+
+def set_deepseek_model(api_model: str) -> None:
+    """[兼容] 全局更新 DeepSeek 默认映射。新代码请改用 user_config。"""
+    MODEL_NAME_MAP["deepseek-r1"] = api_model
+    MODEL_NAME_MAP["deepseek-chat"] = api_model
 
 
 async def stream_chat(
     model: str,
     messages: list[dict],
     system_prompt: str | None = None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    """流式调用指定模型，yield 增量文本 chunk."""
-    client = _get_client()
-    api_model = MODEL_NAME_MAP.get(model, model)
+    """流式调用指定模型，yield 增量文本 chunk.
+
+    user_id 用于解析该用户的私有配置（API key / 模型映射）。
+    无 user_id 时使用全局默认（仅推荐 demo 场景）。
+    """
+    cfg = get_effective_config(user_id)
+    client = _client_for(cfg["api_base_url"], cfg["api_key"])
+    frontend_model = normalize_model_id(model)
+    api_model = cfg["models"].get(frontend_model, frontend_model)
 
     full_messages: list[dict] = []
     if system_prompt:
@@ -57,9 +92,10 @@ async def complete_chat(
     model: str,
     messages: list[dict],
     system_prompt: str | None = None,
+    user_id: str | None = None,
 ) -> str:
     """非流式调用，返回完整文本（orchestrator 内部用于收集完整回答）."""
     parts: list[str] = []
-    async for chunk in stream_chat(model, messages, system_prompt):
+    async for chunk in stream_chat(model, messages, system_prompt, user_id=user_id):
         parts.append(chunk)
     return "".join(parts)

@@ -1,5 +1,6 @@
-import { Trophy, Edit3, Check, X } from 'lucide-react'
+import { Trophy, Edit3, Check, X, Download } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import MarkdownRenderer from './MarkdownRenderer'
 import CopyButton from './CopyButton'
 import clsx from 'clsx'
@@ -10,9 +11,10 @@ interface Props {
   participantCount?: number
   isStreaming?: boolean
   onSave?: (newContent: string) => void
+  topic?: string
 }
 
-export default function ConsensusCard({ content, errors = [], participantCount = 4, onSave }: Props) {
+export default function ConsensusCard({ content, errors = [], participantCount = 4, onSave, topic }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(content)
 
@@ -24,6 +26,28 @@ export default function ConsensusCard({ content, errors = [], participantCount =
   const handleCancel = () => {
     setEditContent(content)
     setIsEditing(false)
+  }
+
+  const handleExport = () => {
+    const date = new Date().toISOString().slice(0, 10)
+    const titleLine = topic ? `# Quorum 共识 · ${topic}\n` : `# Quorum 多方共识\n`
+    const meta = `\n> 生成时间：${new Date().toLocaleString('zh-CN')}\n> 参与模型：GPT / Gemini / Grok / DeepSeek\n\n---\n\n`
+    const errorBlock = errors.length
+      ? `\n\n---\n\n## ⚠️ 未参与讨论的模型\n${errors.map(e => `- **${modelLabel(e.model)}**: ${truncateError(e.error)}`).join('\n')}\n`
+      : ''
+    const md = titleLine + meta + content + errorBlock
+
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safeTopic = (topic || '共识').replace(/[\\/:*?"<>|]/g, '').slice(0, 30)
+    a.href = url
+    a.download = `quorum-${safeTopic}-${date}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('共识已导出为 Markdown')
   }
 
   return (
@@ -42,7 +66,7 @@ export default function ConsensusCard({ content, errors = [], participantCount =
               <span className="text-[10px] text-text-4 font-medium uppercase tracking-wider">验证模型:</span>
               <div className="flex gap-1">
                 {(['gpt', 'gemini', 'grok', 'deepseek'] as const).map(m => {
-                  const modelId = m === 'gpt' ? 'gpt-4o' : m === 'gemini' ? 'gemini-2.0-flash' : m === 'grok' ? 'grok-2' : 'deepseek-chat'
+                  const modelId = m === 'gpt' ? 'gpt-4o' : m === 'gemini' ? 'gemini-2.0-flash' : m === 'grok' ? 'grok-2' : 'deepseek-r1'
                   const hasError = errors.some(e => e.model === modelId)
                   return (
                     <div
@@ -56,8 +80,16 @@ export default function ConsensusCard({ content, errors = [], participantCount =
             </div>
           </div>
 
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             <CopyButton content={content} className="p-1.5 hover:bg-white/10" />
+
+            <button
+              onClick={handleExport}
+              className="p-1.5 rounded-xl bg-white/5 text-text-4 hover:text-cyan-400 hover:bg-white/10 transition-all"
+              title="导出为 Markdown"
+            >
+              <Download size={14} />
+            </button>
 
             {onSave && !isEditing && (
               <button
@@ -137,6 +169,7 @@ function modelLabel(modelId: string): string {
     'gpt-4o': 'GPT',
     'gemini-2.0-flash': 'Gemini',
     'grok-2': 'Grok',
+    'deepseek-r1': 'DeepSeek',
     'deepseek-chat': 'DeepSeek',
   }
   return map[modelId] ?? modelId

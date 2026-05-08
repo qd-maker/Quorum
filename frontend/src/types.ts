@@ -1,5 +1,5 @@
 // ============ 模型定义 ============
-export type ModelId = 'gpt-4o' | 'gemini-2.0-flash' | 'grok-2' | 'deepseek-chat'
+export type ModelId = 'gpt-4o' | 'gemini-2.0-flash' | 'grok-2' | 'deepseek-r1'
 
 export interface ModelMeta {
   id: ModelId
@@ -21,20 +21,35 @@ const MODEL_CONFIG_KEYS: Record<ModelId, string> = {
   'gpt-4o': 'gptModel',
   'gemini-2.0-flash': 'geminiModel',
   'grok-2': 'grokModel',
-  'deepseek-chat': 'deepseekModel',
+  'deepseek-r1': 'deepseekModel',
+}
+
+const LEGACY_MODEL_ALIASES: Record<string, ModelId> = {
+  'deepseek-chat': 'deepseek-r1',
+}
+
+export function normalizeModelId(modelId: string | null | undefined): ModelId {
+  const normalized = modelId ? (LEGACY_MODEL_ALIASES[modelId] || modelId) : 'gpt-4o'
+  return normalized in MODEL_META ? normalized as ModelId : 'gpt-4o'
 }
 
 /**
  * 从 localStorage 读取用户配置的模型名称。
  * 如果用户配置了自定义名称，返回自定义名称；否则返回默认名称。
  */
-export function getModelDisplayName(modelId: ModelId): string {
+export function getModelDisplayName(modelIdInput: ModelId | string): string {
+  const modelId = normalizeModelId(modelIdInput)
   try {
     const raw = localStorage.getItem(API_CONFIG_KEY)
     if (raw) {
       const cfg = JSON.parse(raw)
       const key = MODEL_CONFIG_KEYS[modelId]
-      if (key && cfg[key]) return cfg[key]
+      if (key && cfg[key]) {
+        if (modelId === 'deepseek-r1' && cfg[key] === 'deepseek-chat') {
+          return MODEL_META[modelId].name
+        }
+        return cfg[key]
+      }
     }
   } catch { /* ignore */ }
   return MODEL_META[modelId].name
@@ -74,9 +89,9 @@ export const MODEL_META: Record<ModelId, ModelMeta> = {
     dimColor: 'rgba(0,212,255,0.15)',
     description: 'xAI · 实时资讯',
   },
-  'deepseek-chat': {
-    id: 'deepseek-chat',
-    name: 'DeepSeek',
+  'deepseek-r1': {
+    id: 'deepseek-r1',
+    name: 'DeepSeek R1',
     shortName: 'DeepSeek',
     provider: 'deepseek',
     color: '#4D6BFE',

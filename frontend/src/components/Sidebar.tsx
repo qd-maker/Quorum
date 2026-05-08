@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Users, Trash2, Settings, Search,
   PanelLeftClose, PanelLeft, Bot, MessageSquare, LogOut,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { toast } from 'sonner'
 import type { HistoryItem, ModelId } from '../types'
+import { normalizeModelId } from '../types'
 import ApiSettingsModal from './ApiSettingsModal'
 import ThemeToggle from './ThemeToggle'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { useHotkey } from '../lib/useHotkey'
 
 function Logo() {
   return (
@@ -22,12 +25,12 @@ function Logo() {
   )
 }
 
-const CHAT_MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
+const CHAT_MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-r1']
 const MODEL_LABEL: Record<ModelId, string> = {
   'gpt-4o': 'GPT 对话',
   'gemini-2.0-flash': 'Gemini 对话',
   'grok-2': 'Grok 对话',
-  'deepseek-chat': 'DeepSeek 对话',
+  'deepseek-r1': 'DeepSeek 对话',
 }
 
 function ModelHistoryGroup({
@@ -83,6 +86,7 @@ function SidebarInner({
   handleDelete,
   historyFilter,
   setHistoryFilter,
+  searchInputRef,
 }: {
   searchQuery: string
   setSearchQuery: (q: string) => void
@@ -92,7 +96,10 @@ function SidebarInner({
   handleDelete: (id: string) => void
   historyFilter: 'all' | 'chat' | 'discuss'
   setHistoryFilter: (v: 'all' | 'chat' | 'discuss') => void
+  searchInputRef?: React.RefObject<HTMLInputElement>
 }) {
+  const isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+  const kbdHint = isMac ? '⌘K' : 'Ctrl K'
   const navigate = useNavigate()
   const location = useLocation()
   const isChatActive = location.pathname === '/chat' || location.pathname === '/'
@@ -132,11 +139,15 @@ function SidebarInner({
       <div className="relative mb-3 mx-1">
         <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-5" />
         <input
+          ref={searchInputRef}
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="搜索历史记录..."
-          className="w-full pl-8 pr-3 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none input-focus-glow focus:bg-bg-3/70"
+          className="w-full pl-8 pr-12 py-1.5 bg-bg-3/50 border border-white/6 rounded-lg text-[12px] text-text-2 placeholder:text-text-5 outline-none input-focus-glow focus:bg-bg-3/70"
         />
+        <kbd className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] text-text-5 bg-bg-2/60 border border-white/8 rounded font-mono">
+          {kbdHint}
+        </kbd>
       </div>
 
       <div className="flex items-center gap-1 mb-3 mx-1">
@@ -216,10 +227,16 @@ function SidebarFooter({
 }: {
   setShowSettings: (s: boolean) => void
 }) {
-  const { user, signOut } = useAuth()
+  const { user, isDemo, signOut } = useAuth()
 
   return (
     <div className="px-3 pb-4 pt-2 mobile-safe-bottom border-t border-white/5 flex-shrink-0">
+      {isDemo && (
+        <div className="mb-2 mx-1 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-400/20 text-[11px] text-violet-300 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+          <span>Demo 模式 · 历史不会保存</span>
+        </div>
+      )}
       <div className="flex items-center gap-1">
         <button
           onClick={() => setShowSettings(true)}
@@ -228,7 +245,9 @@ function SidebarFooter({
           <Settings size={15} strokeWidth={1.5} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
           <div className="flex flex-col flex-1 min-w-0">
             <span className="text-[13.5px] font-medium text-text-2 truncate pointer-events-none">接口设置</span>
-            <span className="text-[11px] text-text-5 truncate">{user?.email || '配置 API Key'}</span>
+            <span className="text-[11px] text-text-5 truncate">
+              {isDemo ? '使用平台默认 Key' : (user?.email || '配置 API Key')}
+            </span>
           </div>
         </button>
         <ThemeToggle />
@@ -238,7 +257,7 @@ function SidebarFooter({
         className="press-effect mt-1 flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-text-5 hover:text-red-400 hover:bg-red-500/8 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/35 text-[12px]"
       >
         <LogOut size={13} strokeWidth={1.5} />
-        退出登录
+        {isDemo ? '退出 Demo' : '退出登录'}
       </button>
     </div>
   )
@@ -260,6 +279,25 @@ export default function Sidebar({
   const [showSettings, setShowSettings] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [historyFilter, setHistoryFilter] = useState<'all' | 'chat' | 'discuss'>('all')
+
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // 全局快捷键 Mod+K：聚焦搜索框（移动端先打开抽屉）
+  useHotkey(
+    'Mod+k',
+    () => {
+      if (window.innerWidth < 768) setMobileSidebarOpen(true)
+      if (collapsed) {
+        setCollapsed(false)
+        localStorage.setItem('sidebar-collapsed', 'false')
+      }
+      setTimeout(() => {
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }, 50)
+    },
+    { allowInInput: true },
+  )
 
   const toggleSidebar = () => {
     const next = !collapsed
@@ -290,7 +328,7 @@ export default function Sidebar({
             preview: s.preview || '',
             createdAt: new Date(s.created_at).getTime(),
           }
-          const model = s.model || 'gpt-4o'
+          const model = normalizeModelId(s.model)
           if (grouped[model]) grouped[model].push(item)
           else grouped['gpt-4o'].push(item)
         }
@@ -321,10 +359,13 @@ export default function Sidebar({
 
   const handleDelete = async (id: string) => {
     try {
-      await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      const resp = await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      if (resp.ok) {
+        toast.success('已删除会话')
+      }
       fetchHistory()
-    } catch {
-      /* 静默 */
+    } catch (err: any) {
+      toast.error('删除失败', { description: err?.message || '请重试' })
     }
   }
 
@@ -339,6 +380,7 @@ export default function Sidebar({
     handleDelete,
     historyFilter,
     setHistoryFilter,
+    searchInputRef,
   }
 
   return (

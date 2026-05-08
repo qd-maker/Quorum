@@ -1131,6 +1131,22 @@ body,
   opacity: 0;
 }
 
+/* ─── Suggestion Card 入场动画 ─────────────────────── */
+@keyframes suggestionFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.suggestion-card {
+  animation: suggestionFadeUp 0.45s var(--spring-gentle) backwards;
+}
+
 /* ─── Button Ripple Effect ───────────────────────── */
 .btn-ripple {
   position: relative;

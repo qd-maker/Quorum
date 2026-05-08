@@ -3,11 +3,13 @@
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from auth import get_current_user
 from config import get_settings
+from rate_limit import limiter
 from services.model_service import stream_chat
 from services.search_service import (
     get_current_datetime_str,
@@ -41,7 +43,12 @@ def _build_system_prompt(search_ctx: str) -> str:
 
 
 @router.post("/chat")
-async def chat(req: ChatRequest):
+@limiter.limit("20/minute")
+async def chat(
+    request: Request,
+    req: ChatRequest,
+    user_id: str = Depends(get_current_user),
+):
     settings = get_settings()
     if req.model not in settings.available_models:
         raise HTTPException(400, f"不支持的模型: {req.model}")
@@ -54,7 +61,7 @@ async def chat(req: ChatRequest):
         (m["content"] for m in reversed(req.messages) if m.get("role") == "user"),
         "",
     )
-    
+
     last_user_msg = ""
     if isinstance(last_user_msg_raw, list):
         # 提取 Vision 格式中的文本部分
@@ -82,7 +89,11 @@ async def chat(req: ChatRequest):
             if search_sources:
                 sources_data = json.dumps({"sources": search_sources}, ensure_ascii=False)
                 yield f"data: {sources_data}\n\n"
-            async for chunk in stream_chat(req.model, req.messages, system_prompt):
+            async for chunk in stream_chat(req.model, req.messages, system_prompt, user_id=user_id):
+                # 客户端已断开 → 立即停止生成，节省 token
+                if await request.is_disconnected():
+                    logger.info("Chat stream aborted: client disconnected")
+                    break
                 data = json.dumps({"content": chunk}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
             yield "data: [DONE]\n\n"

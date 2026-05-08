@@ -1,19 +1,20 @@
 import clsx from 'clsx'
 import type { ModelId } from '../types'
-import { MODEL_META } from '../types'
+import { MODEL_META, normalizeModelId } from '../types'
 import TypingIndicator from './TypingIndicator'
 
 // ─── Model Avatar ─────────────────────────────────
 export function ModelAvatar({
   modelId, size = 'md',
 }: {
-  modelId: ModelId
+  modelId: ModelId | string
   size?: 'sm' | 'md' | 'lg'
 }) {
-  const meta = MODEL_META[modelId]
+  const normalizedModelId = normalizeModelId(modelId)
+  const meta = MODEL_META[normalizedModelId]
   const sizeMap = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-11 h-11 text-base' }
 
-  if (modelId === 'gpt-4o') {
+  if (normalizedModelId === 'gpt-4o') {
     return (
       <div className={clsx('rounded-xl flex items-center justify-center font-bold font-mono flex-shrink-0', sizeMap[size])}
         style={{ background: `linear-gradient(135deg, ${meta.gradientFrom}, ${meta.gradientTo})` }}>
@@ -22,7 +23,7 @@ export function ModelAvatar({
     )
   }
 
-  if (modelId === 'gemini-2.0-flash') {
+  if (normalizedModelId === 'gemini-2.0-flash') {
     return (
       <div className={clsx('rounded-xl flex items-center justify-center flex-shrink-0', sizeMap[size])}
         style={{ background: `linear-gradient(135deg, ${meta.gradientFrom}, ${meta.gradientTo})` }}>
@@ -34,7 +35,7 @@ export function ModelAvatar({
     )
   }
 
-  if (modelId === 'deepseek-chat') {
+  if (normalizedModelId === 'deepseek-r1') {
     return (
       <div className={clsx('rounded-xl flex items-center justify-center font-bold font-mono flex-shrink-0', sizeMap[size])}
         style={{ background: `linear-gradient(135deg, ${meta.gradientFrom}, ${meta.gradientTo})` }}>
@@ -56,7 +57,8 @@ export function ModelAvatar({
 
 // ─── Model Badge ──────────────────────────────────
 function ModelBadge({ modelId }: { modelId: ModelId }) {
-  const meta = MODEL_META[modelId]
+  const normalizedModelId = normalizeModelId(modelId)
+  const meta = MODEL_META[normalizedModelId]
   return (
     <span
       className="text-xs font-semibold px-2 py-0.5 rounded-md"
@@ -80,25 +82,26 @@ const bubbleClass: Record<ModelId, string> = {
   'gpt-4o': 'bubble-gpt',
   'gemini-2.0-flash': 'bubble-gemini',
   'grok-2': 'bubble-grok',
-  'deepseek-chat': 'bubble-deepseek',
+  'deepseek-r1': 'bubble-deepseek',
 }
 
 export default function ModelBubble({
   modelId, content, isStreaming = false, round, animDelay = 0,
 }: MessageBubbleProps) {
-  const meta = MODEL_META[modelId]
+  const normalizedModelId = normalizeModelId(modelId)
+  const meta = MODEL_META[normalizedModelId]
 
   return (
     <div
       className="flex gap-3 animate-fade-in-up"
       style={{ animationDelay: `${animDelay}ms`, opacity: 0 }}
     >
-      <ModelAvatar modelId={modelId} size="md" />
+      <ModelAvatar modelId={normalizedModelId} size="md" />
 
       <div className="flex-1 min-w-0">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
-          <ModelBadge modelId={modelId} />
+          <ModelBadge modelId={normalizedModelId} />
           <span className="text-xs text-text-5">{meta.description}</span>
           <span className="text-xs text-text-5 ml-auto">第 {round} 轮</span>
         </div>
@@ -107,7 +110,7 @@ export default function ModelBubble({
         <div
           className={clsx(
             'rounded-xl rounded-tl-sm px-4 py-3.5 bg-bg-3 text-text-2 text-sm leading-relaxed',
-            bubbleClass[modelId],
+            bubbleClass[normalizedModelId],
             'transition-all duration-300'
           )}
         >

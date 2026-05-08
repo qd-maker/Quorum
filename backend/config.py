@@ -19,16 +19,23 @@ class Settings(BaseSettings):
     # 搜索服务
     TAVILY_API_KEY: str = ""       # Tavily 搜索 API key（DuckDuckGo 不稳定时的备用）
 
+    # Demo 模式（公开演示用）— 允许匿名访问 chat/discuss，每 IP 受限流约束
+    DEMO_MODE: bool = False
+    DEMO_RATE_PER_MINUTE: int = 3   # demo 用户每分钟最多发起讨论次数
+
     # 模型名称映射
     MODEL_GPT: str = "gpt-4o"
     MODEL_GEMINI: str = "gemini-2.0-flash"
     MODEL_GROK: str = "grok-2"
-    MODEL_DEEPSEEK: str = "deepseek-chat"
+    MODEL_DEEPSEEK: str = "deepseek-r1"
 
     # 可用模型列表
     @property
     def available_models(self) -> list[str]:
-        return [self.MODEL_GPT, self.MODEL_GEMINI, self.MODEL_GROK, self.MODEL_DEEPSEEK]
+        models = [self.MODEL_GPT, self.MODEL_GEMINI, self.MODEL_GROK, self.MODEL_DEEPSEEK]
+        if "deepseek-chat" not in models:
+            models.append("deepseek-chat")
+        return models
 
     model_config = {"env_file": "../.env", "env_file_encoding": "utf-8"}
 

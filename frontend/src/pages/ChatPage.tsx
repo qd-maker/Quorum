@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Send, ChevronDown, Square, Paperclip, X, FileText, ImageIcon, Globe, Users } from 'lucide-react'
 import clsx from 'clsx'
+import { toast } from 'sonner'
 import type { ModelId, ChatMessage } from '../types'
-import { MODEL_META, getModelDisplayName } from '../types'
+import { MODEL_META, getModelDisplayName, normalizeModelId } from '../types'
 import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CopyButton from '../components/CopyButton'
 import { apiFetch } from '../lib/api'
+import { useHotkey } from '../lib/useHotkey'
 
 // ─── Types ───────────────────────────────────────────
 interface Attachment {
@@ -27,7 +29,7 @@ const MAX_IMAGE_MB = 10
 const MAX_TEXT_MB = 2
 
 // ─── Model Selector ───────────────────────────────────
-const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
+const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-r1']
 
 function ModelSelector({ selected, onChange }: { selected: ModelId; onChange: (m: ModelId) => void }) {
   const [open, setOpen] = useState(false)
@@ -142,22 +144,23 @@ function UserMessage({ content, attachment }: { content: string; attachment?: At
 
 // ─── Assistant bubble ─────────────────────────────────
 function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStreaming?: boolean }; sources?: { title: string; url: string }[] }) {
-  const meta = MODEL_META[msg.model!]
+  const msgModel = normalizeModelId(msg.model)
+  const meta = MODEL_META[msgModel]
   const bubbleMap: Record<ModelId, string> = {
     'gpt-4o': 'bubble-gpt',
     'gemini-2.0-flash': 'bubble-gemini',
     'grok-2': 'bubble-grok',
-    'deepseek-chat': 'bubble-deepseek',
+    'deepseek-r1': 'bubble-deepseek',
   }
   return (
     <div className="flex gap-3 animate-fade-in-up" style={{ opacity: 0 }}>
-      <ModelAvatar modelId={msg.model!} size="md" />
+      <ModelAvatar modelId={msgModel} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs font-semibold" style={{ color: meta.color }}>{meta.shortName}</span>
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', bubbleMap[msg.model!])}>
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', bubbleMap[msgModel])}>
           <MarkdownRenderer
             content={msg.content}
             isStreaming={!!msg.isStreaming}
@@ -176,15 +179,16 @@ function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStream
 }
 
 // ─── Empty state ──────────────────────────────────────
-function EmptyState({ model, onSend }: { model: ModelId; onSend: (text: string) => void }) {
-  const meta = MODEL_META[model]
+function EmptyState({ model, onSend }: { model: ModelId | string; onSend: (text: string) => void }) {
+  const normalizedModel = normalizeModelId(model)
+  const meta = MODEL_META[normalizedModel]
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-6 pb-24">
       <div className="w-16 h-16 rounded-2xl mb-5 flex items-center justify-center"
         style={{ background: `linear-gradient(135deg, ${meta.gradientFrom}22, ${meta.gradientTo}22)`, border: `1px solid ${meta.color}33` }}>
-        <ModelAvatar modelId={model} size="lg" />
+        <ModelAvatar modelId={normalizedModel} size="lg" />
       </div>
-      <h2 className="font-display text-xl font-semibold text-text-1 mb-2">{getModelDisplayName(model)}</h2>
+      <h2 className="font-display text-xl font-semibold text-text-1 mb-2">{getModelDisplayName(normalizedModel)}</h2>
       <p className="text-sm text-text-4 max-w-xs">{meta.description} · 有什么可以帮你的？</p>
       <div className="mt-6 flex flex-wrap gap-2 justify-center max-w-sm">
         {['解释一个技术概念', '帮我写代码', '分析这个问题', '给我一些建议'].map(s => (
@@ -232,7 +236,11 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
   }, [])
 
   // 同步 refs
-  modelRef.current = model
+  modelRef.current = normalizeModelId(model)
+
+  useEffect(() => {
+    setModel(prev => normalizeModelId(prev))
+  }, [])
 
   const updateMessages = (updater: (prev: (ChatMessage & { isStreaming?: boolean })[]) => (ChatMessage & { isStreaming?: boolean })[]) => {
     setMessages(prev => {
@@ -274,12 +282,12 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     apiFetch(`/api/sessions/${sessionId}`)
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json() })
       .then(data => {
-        if (data.model) setModel(data.model as ModelId)
+        if (data.model) setModel(normalizeModelId(data.model))
         const msgs = (data.messages || []).map((m: any, i: number) => ({
           id: m.id || String(i),
           role: m.role as 'user' | 'assistant',
           content: m.content,
-          model: m.model as ModelId | undefined,
+          model: m.model ? normalizeModelId(m.model) : undefined,
           timestamp: new Date(m.created_at).getTime(),
           isStreaming: false,
         }))
@@ -370,6 +378,9 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
   }, [])
 
+  // 快捷键：Esc 取消生成（仅在流式中且当前页活跃）
+  useHotkey('Escape', handleStop, { enabled: active && isStreaming, allowInInput: true })
+
   // ─── 发送消息 ──────────────────────────────────────
   const handleSend = async (overrideText?: string) => {
     const textContent = (overrideText ?? input).trim()
@@ -426,16 +437,17 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
 
     try {
       abortRef.current = new AbortController()
+      const currentModel = normalizeModelId(model)
       const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: apiMessages, stream: true, use_search: useSearch }),
+        body: JSON.stringify({ model: currentModel, messages: apiMessages, stream: true, use_search: useSearch }),
         signal: abortRef.current.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
       const aiMsg: ChatMessage & { isStreaming: boolean } = {
-        id: aiId, role: 'assistant', content: '', model, timestamp: Date.now(), isStreaming: true,
+        id: aiId, role: 'assistant', content: '', model: currentModel, timestamp: Date.now(), isStreaming: true,
       }
       updateMessages(prev => [...prev, aiMsg])
       setIsTyping(false)
@@ -522,8 +534,12 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         return
       }
       setIsTyping(false)
+      // 醒目提示用户：请求失败的根因
+      toast.error('对话请求失败', {
+        description: err?.message || '请检查网络或 API 配置后重试',
+      })
       updateMessages(prev => [...prev, {
-        id: aiId, role: 'assistant' as const, content: `❌ 请求失败: ${err.message}`, model, timestamp: Date.now(), isStreaming: false,
+        id: aiId, role: 'assistant' as const, content: `❌ 请求失败: ${err.message}`, model: normalizeModelId(model), timestamp: Date.now(), isStreaming: false,
       }])
     }
   }
@@ -552,7 +568,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="md:hidden h-10 w-10 flex-shrink-0" aria-hidden="true" />
-            <ModelSelector selected={model} onChange={m => {
+            <ModelSelector selected={normalizeModelId(model)} onChange={m => {
               setModel(m)
               updateMessages(() => [])
               sessionIdRef.current = null
@@ -581,7 +597,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       {/* Messages */}
       <div className="flex-1 overflow-y-auto smooth-scroll relative" onScroll={handleScroll}>
         {messages.length === 0 ? (
-          <EmptyState model={model} onSend={(text) => handleSend(text)} />
+          <EmptyState model={normalizeModelId(model)} onSend={(text) => handleSend(text)} />
         ) : (
           <div className="max-w-3xl mx-auto px-5 py-6 space-y-5">
             {messages.map(msg =>
@@ -589,7 +605,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
                 ? <UserMessage key={msg.id} content={msg.content} attachment={(msg as any).attachment} />
                 : <AssistantMessage key={msg.id} msg={msg} sources={chatSources} />
             )}
-            {isTyping && <TypingIndicator modelId={model} />}
+            {isTyping && <TypingIndicator modelId={normalizeModelId(model)} />}
             <div ref={bottomRef} />
           </div>
         )}

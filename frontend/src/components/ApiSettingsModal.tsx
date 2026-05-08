@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Key, Globe, Server, Cpu, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
+import { toast } from 'sonner'
+import { apiFetch } from '../lib/api'
 
 // ─── 默认配置结构 ─────────────────────────────────
 interface ApiConfig {
@@ -29,7 +31,7 @@ const DEFAULT_CONFIG: ApiConfig = {
     gptModel: 'gpt-4o',
     geminiModel: 'gemini-2.0-flash',
     grokModel: 'grok-4',
-    deepseekModel: 'deepseek-chat',
+    deepseekModel: 'deepseek-r1',
 }
 
 const STORAGE_KEY = 'many-ai-api-config'
@@ -129,8 +131,9 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
         saveConfig(config)
 
         // 同步到后端
+        let backendOk = true
         try {
-            await fetch('/api/config', {
+            const resp = await apiFetch('/api/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -146,11 +149,25 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                     deepseek_model: config.deepseekModel || undefined,
                 }),
             })
-        } catch { /* 静默 */ }
+            if (!resp.ok && resp.status !== 429) {
+                backendOk = false
+                toast.error('后端配置同步失败', {
+                    description: `HTTP ${resp.status}，已保存到本地`,
+                })
+            }
+        } catch (err: any) {
+            backendOk = false
+            toast.error('后端配置同步失败', {
+                description: err?.message || '已保存到本地，请检查网络',
+            })
+        }
 
         setSaved(true)
         saveBtnRef.current?.classList.add('save-success')
         window.dispatchEvent(new Event('config-updated'))
+        if (backendOk) {
+            toast.success('配置已保存')
+        }
         setTimeout(() => {
             setSaved(false)
             saveBtnRef.current?.classList.remove('save-success')
@@ -272,7 +289,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             label="DeepSeek 模型"
                             value={config.deepseekModel}
                             onChange={update('deepseekModel')}
-                            placeholder="deepseek-chat"
+                            placeholder="deepseek-r1"
                         />
                     </Section>
                 </div>

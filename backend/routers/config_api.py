@@ -1,13 +1,12 @@
-"""动态配置 API 路由 — 运行时更新 API 配置."""
+"""动态配置 API 路由 — per-user 运行时配置，互不影响."""
 
 import logging
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth import get_current_user
-from config import get_settings
-from services.model_service import MODEL_NAME_MAP
+from auth import get_current_user_strict as get_current_user
+from services.user_config import get_effective_config, update_user_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -16,6 +15,7 @@ router = APIRouter()
 class ConfigUpdateRequest(BaseModel):
     api_base_url: str | None = None
     api_key: str | None = None
+    # 兼容字段（前端可能仍在传），目前未做单 provider 拆分
     openai_key: str | None = None
     google_key: str | None = None
     xai_key: str | None = None
@@ -27,35 +27,30 @@ class ConfigUpdateRequest(BaseModel):
 
 
 @router.post("/config")
-async def update_config(req: ConfigUpdateRequest, user_id: str = Depends(get_current_user)):
-    """运行时更新 API 配置."""
-    s = get_settings()
-
-    if req.api_base_url:
-        s.API_BASE_URL = req.api_base_url
-    if req.api_key:
-        s.API_KEY = req.api_key
-
-    # 更新模型名称映射
-    if req.gpt_model:
-        MODEL_NAME_MAP["gpt-4o"] = req.gpt_model
-    if req.gemini_model:
-        MODEL_NAME_MAP["gemini-2.0-flash"] = req.gemini_model
-    if req.grok_model:
-        MODEL_NAME_MAP["grok-2"] = req.grok_model
-    if req.deepseek_model:
-        MODEL_NAME_MAP["deepseek-chat"] = req.deepseek_model
-
-    logger.info("Config updated: base_url=%s, models=%s", s.API_BASE_URL, MODEL_NAME_MAP)
-    return {"ok": True, "models": MODEL_NAME_MAP}
+async def update_config(
+    req: ConfigUpdateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """更新当前用户的运行时配置（仅对自己生效）."""
+    cfg = update_user_config(
+        user_id,
+        api_base_url=req.api_base_url,
+        api_key=req.api_key,
+        gpt_model=req.gpt_model,
+        gemini_model=req.gemini_model,
+        grok_model=req.grok_model,
+        deepseek_model=req.deepseek_model,
+    )
+    logger.info("User %s config updated: models=%s", user_id[:8], cfg["models"])
+    return {"ok": True, "models": cfg["models"]}
 
 
 @router.get("/config")
-async def get_config():
-    """获取当前 API 配置（不返回完整密钥）."""
-    s = get_settings()
+async def get_config(user_id: str = Depends(get_current_user)):
+    """获取当前用户的有效配置（不返回完整密钥）."""
+    cfg = get_effective_config(user_id)
     return {
-        "api_base_url": s.API_BASE_URL,
-        "api_key_set": bool(s.API_KEY),
-        "models": dict(MODEL_NAME_MAP),
+        "api_base_url": cfg["api_base_url"],
+        "api_key_set": bool(cfg["api_key"]),
+        "models": cfg["models"],
     }

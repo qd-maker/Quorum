@@ -7,20 +7,22 @@ import {
   Trash2, X, Plus, Square, ChevronRight, FileText, Check, ImageIcon
 } from 'lucide-react'
 import clsx from 'clsx'
+import { toast } from 'sonner'
 import type { ModelId, DiscussMessage } from '../types'
-import { MODEL_META, getModelDisplayName } from '../types'
+import { MODEL_META, getModelDisplayName, normalizeModelId } from '../types'
 import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import ConsensusCard from '../components/ConsensusCard'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CopyButton from '../components/CopyButton'
 import { apiFetch } from '../lib/api'
+import { useHotkey } from '../lib/useHotkey'
 
 // ─── Types ───────────────────────────────────────
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
 interface FollowUpItem { question: string; answer: string; isStreaming: boolean }
 interface ModelError { model: string; error: string }
-const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-chat']
+const MODELS: ModelId[] = ['gpt-4o', 'gemini-2.0-flash', 'grok-2', 'deepseek-r1']
 const ROLES = [
   { id: 'general', label: '通用助手', desc: '客观中立，平衡各方观点' },
   { id: 'tech', label: '技术专家', desc: '专注架构、性能和代码质量' },
@@ -30,9 +32,9 @@ const ROLES = [
 ]
 
 const RECOMMENDED_PRESETS = [
-  { label: '极客对峙', roles: { 'gpt-4o': '技术专家', 'gemini-2.0-flash': '技术专家', 'grok-2': '严厉批评者', 'deepseek-chat': '技术专家' } },
-  { label: '头脑风暴', roles: { 'gpt-4o': '创意大师', 'gemini-2.0-flash': '产品经理', 'grok-2': '创意大师', 'deepseek-chat': '通用助手' } },
-  { label: '深度评审', roles: { 'gpt-4o': '严厉批评者', 'gemini-2.0-flash': '技术专家', 'grok-2': '产品经理', 'deepseek-chat': '严厉批评者' } }
+  { label: '极客对峙', roles: { 'gpt-4o': '技术专家', 'gemini-2.0-flash': '技术专家', 'grok-2': '严厉批评者', 'deepseek-r1': '技术专家' } },
+  { label: '头脑风暴', roles: { 'gpt-4o': '创意大师', 'gemini-2.0-flash': '产品经理', 'grok-2': '创意大师', 'deepseek-r1': '通用助手' } },
+  { label: '深度评审', roles: { 'gpt-4o': '严厉批评者', 'gemini-2.0-flash': '技术专家', 'grok-2': '产品经理', 'deepseek-r1': '严厉批评者' } }
 ]
 
 
@@ -105,11 +107,12 @@ const MAX_IMAGE_MB = 4
 function ParticipantCard({
   modelId, status, onClick
 }: {
-  modelId: ModelId
+  modelId: ModelId | string
   status: 'waiting' | 'typing' | 'done' | 'idle' | 'error'
   onClick?: () => void
 }) {
-  const meta = MODEL_META[modelId]
+  const normalizedModelId = normalizeModelId(modelId)
+  const meta = MODEL_META[normalizedModelId]
   const statusLabel: Record<string, string> = { waiting: '等待中', typing: '发言中', done: '完成', idle: '', error: '出错' }
   const dotColor: Record<string, string> = { waiting: '#374151', typing: meta.color, done: '#10A37F', idle: '', error: '#EF4444' }
 
@@ -127,7 +130,7 @@ function ParticipantCard({
         onClick && 'cursor-pointer hover:bg-bg-3'
       )}>
       <div className="relative">
-        <ModelAvatar modelId={modelId} size="sm" />
+        <ModelAvatar modelId={normalizedModelId} size="sm" />
         {status !== 'idle' && (
           <span
             className={clsx('absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-1', status === 'typing' && 'animate-pulse')}
@@ -230,20 +233,21 @@ function DiscussionStepper({ phase, onJump }: { phase: Phase; onJump?: (step: 1 
 
 // ─── Bubble ───────────────────────────────────────
 function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; index?: number; sources?: { title: string; url: string }[] }) {
-  const meta = MODEL_META[msg.model]
+  const msgModel = normalizeModelId(msg.model)
+  const meta = MODEL_META[msgModel]
   const borderMap: Record<ModelId, string> = {
     'gpt-4o': 'bubble-gpt',
     'gemini-2.0-flash': 'bubble-gemini',
     'grok-2': 'bubble-grok',
-    'deepseek-chat': 'bubble-deepseek',
+    'deepseek-r1': 'bubble-deepseek',
   }
   const staggerClass = `stagger-${Math.min(index + 1, 8)}`
   return (
     <div id={msg.id} className={clsx('flex gap-3 msg-enter gpu-accelerated', staggerClass)}>
-      <ModelAvatar modelId={msg.model} size="md" />
+      <ModelAvatar modelId={msgModel} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-semibold" style={{ color: meta.color }}>{getModelDisplayName(msg.model)}</span>
+          <span className="text-xs font-semibold" style={{ color: meta.color }}>{getModelDisplayName(msgModel)}</span>
           {msg.role && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/10 text-text-3 border border-white/5">
               {msg.role}
@@ -251,7 +255,7 @@ function DiscussBubble({ msg, index = 0, sources = [] }: { msg: DiscussMessage; 
           )}
           <span className="text-xs text-text-5">{meta.description}</span>
         </div>
-        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', borderMap[msg.model])}>
+        <div className={clsx('bg-bg-3 rounded-xl rounded-tl-sm px-4 py-3.5 text-sm text-text-2 leading-relaxed group/bubble relative', borderMap[msgModel])}>
           <MarkdownRenderer
             content={msg.content}
             isStreaming={!!msg.isStreaming}
@@ -318,7 +322,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
     'gpt-4o': '技术专家',
     'gemini-2.0-flash': '通用助手',
     'grok-2': '创意大师',
-    'deepseek-chat': '严厉批评者'
+    'deepseek-r1': '严厉批评者'
   })
   const [showRoleSetting, setShowRoleSetting] = useState(false)
   const [useSearch, setUseSearch] = useState(false)
@@ -342,10 +346,30 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
   }
 
   const suggestions = [
-    'AI会在5年内取代大多数程序员吗？',
-    '创业公司应该选择微服务还是单体架构？',
-    'Web3和区块链的未来还有多大空间？',
-    '远程工作是否会永久改变工作文化？',
+    {
+      emoji: '🤖',
+      title: 'AI 会在 5 年内取代大多数程序员吗？',
+      hint: '热门科技话题 · 多方碰撞观点',
+      preset: RECOMMENDED_PRESETS[2].roles,
+    },
+    {
+      emoji: '🏗️',
+      title: '创业公司应该选择微服务还是单体架构？',
+      hint: '架构选型 · 技术评审',
+      preset: RECOMMENDED_PRESETS[0].roles,
+    },
+    {
+      emoji: '💡',
+      title: '如果重新设计 React，你会改变什么？',
+      hint: '思维实验 · 创意发散',
+      preset: RECOMMENDED_PRESETS[1].roles,
+    },
+    {
+      emoji: '🌍',
+      title: '远程工作是否会永久改变工作文化？',
+      hint: '社会议题 · 平衡视角',
+      preset: RECOMMENDED_PRESETS[2].roles,
+    },
   ]
 
   const processFile = useCallback((file: File) => {
@@ -554,18 +578,42 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
         )}
       </div>
 
-      {/* Suggestions */}
-      <div className="w-full max-w-xl mt-3 grid grid-cols-2 gap-2">
-        {suggestions.map(s => (
-          <button
-            key={s}
-            onClick={() => onStart(s, modelRoles)}
-            className="glass glass-hover px-3 py-2 rounded-xl text-xs text-text-4 hover:text-text-2 text-left leading-snug transition-all"
-          >
-            <ArrowRight size={10} className="inline mr-1.5 opacity-50" />
-            {s}
-          </button>
-        ))}
+      {/* Suggestions — 推荐话题卡片 */}
+      <div className="w-full max-w-xl mt-3">
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <Sparkles size={12} className="text-violet-400" />
+          <span className="text-xs font-medium text-text-3 uppercase tracking-wider">
+            灵感话题 · 一键开聊
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {suggestions.map((s, i) => (
+            <button
+              key={s.title}
+              onClick={() => onStart(s.title, s.preset, undefined, false)}
+              className="suggestion-card group relative text-left rounded-2xl border border-white/8 bg-bg-3/50 hover:bg-bg-3/90 p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-violet-400/30"
+              style={{ animationDelay: `${i * 60}ms` }}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="text-lg leading-none mt-0.5 select-none transition-transform group-hover:scale-110">
+                  {s.emoji}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-text-2 group-hover:text-text-1 leading-snug font-medium">
+                    {s.title}
+                  </div>
+                  <div className="mt-1 text-[10.5px] text-text-5 leading-snug">
+                    {s.hint}
+                  </div>
+                </div>
+                <ArrowRight
+                  size={12}
+                  className="text-text-5 mt-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all flex-shrink-0"
+                />
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Discussion History */}
@@ -624,7 +672,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   const [messages, setMessages] = useState<DiscussMessage[]>([])
   const [typingModels, setTypingModels] = useState<ModelId[]>([])
   const [modelStatus, setModelStatus] = useState<Record<ModelId, 'waiting' | 'typing' | 'done' | 'idle' | 'error'>>({
-    'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle',
+    'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-r1': 'idle',
   })
   const [consensusContent, setConsensusContent] = useState('')
   const [searchSources, setSearchSources] = useState<{ title: string; url: string }[]>([])
@@ -685,10 +733,10 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         setTopic(data.topic || '')
         setConsensusContent(data.consensus || '')
         setPhase('done')
-        setModelStatus({ 'gpt-4o': 'done', 'gemini-2.0-flash': 'done', 'grok-2': 'done', 'deepseek-chat': 'done' })
+        setModelStatus({ 'gpt-4o': 'done', 'gemini-2.0-flash': 'done', 'grok-2': 'done', 'deepseek-r1': 'done' })
         const msgs = (data.messages || []).map((m: any, i: number) => ({
           id: m.id || String(i),
-          model: m.model as ModelId,
+          model: normalizeModelId(m.model),
           round: m.round || 1,
           content: m.content,
           isStreaming: false,
@@ -758,7 +806,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setSearchSources([])
     setModelErrors([])
     setHasUnseenStreamUpdate(false)
-    setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-chat': 'waiting' })
+    setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-r1': 'waiting' })
     setTypingModels([])
 
     // 跟踪每个模型的消息 ID（用于增量更新内容）
@@ -845,13 +893,13 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 currentRound = evt.round
                 if (evt.round === 2) {
                   setPhase('round2')
-                  setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-chat': 'waiting' })
+                  setModelStatus({ 'gpt-4o': 'waiting', 'gemini-2.0-flash': 'waiting', 'grok-2': 'waiting', 'deepseek-r1': 'waiting' })
                 }
                 break
               }
 
               case 'model_chunk': {
-                const model = evt.model as ModelId
+                const model = normalizeModelId(evt.model)
                 const round = evt.round as number
                 const key = `r${round}-${model}`
 
@@ -875,7 +923,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               }
 
               case 'model_done': {
-                const model = evt.model as ModelId
+                const model = normalizeModelId(evt.model)
                 const round = evt.round as number
                 const key = `r${round}-${model}`
                 setModelStatus(prev => ({ ...prev, [model]: prev[model] === 'error' ? 'error' : 'done' }))
@@ -886,7 +934,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
               }
 
               case 'model_error': {
-                const errModel = evt.model as ModelId
+                const errModel = normalizeModelId(evt.model)
                 setModelStatus(prev => ({ ...prev, [errModel]: 'error' }))
                 break
               }
@@ -938,11 +986,14 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         setMessages(prev => prev.map(m => ({ ...m, isStreaming: false })))
         setTypingModels([])
         setPhase('done')
-        setModelStatus({ 'gpt-4o': 'done', 'gemini-2.0-flash': 'done', 'grok-2': 'done', 'deepseek-chat': 'done' })
+        setModelStatus({ 'gpt-4o': 'done', 'gemini-2.0-flash': 'done', 'grok-2': 'done', 'deepseek-r1': 'done' })
         setTimeout(() => saveDiscussion(), 50)
         return
       }
       console.error('Discussion error:', err)
+      toast.error('讨论流异常中断', {
+        description: err?.message || '请稍后重试',
+      })
       setPhase('done')
     }
   }, [])
@@ -962,6 +1013,10 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     }
   }, [])
 
+  // 快捷键：Esc 取消进行中的讨论或追问
+  const isDiscussing = phase !== 'idle' && phase !== 'done'
+  useHotkey('Escape', handleStop, { enabled: active && isDiscussing, allowInInput: true })
+
   const handleReset = () => {
     if (abortRef.current) abortRef.current.abort()
     if (followUpAbortRef.current) followUpAbortRef.current.abort()
@@ -979,7 +1034,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
     setFollowUpFileError('')
     setUseFollowUpSearch(false)
     setTypingModels([])
-    setModelStatus({ 'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-chat': 'idle' })
+    setModelStatus({ 'gpt-4o': 'idle', 'gemini-2.0-flash': 'idle', 'grok-2': 'idle', 'deepseek-r1': 'idle' })
     navigate('/discuss', { replace: true })
   }
 
@@ -1187,36 +1242,36 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 SSE 实时协同中
               </span>
             )}
-          {/* Participant indicators */}
-          <div className="hidden md:flex items-center gap-1.5">
-            {MODELS.map(m => (
-              <ParticipantCard
-                key={m}
-                modelId={m}
-                status={modelStatus[m]}
-                onClick={() => scrollToModel(m)}
-              />
-            ))}
-          </div>
-          {phase !== 'done' && (
+            {/* Participant indicators */}
+            <div className="hidden md:flex items-center gap-1.5">
+              {MODELS.map(m => (
+                <ParticipantCard
+                  key={m}
+                  modelId={m}
+                  status={modelStatus[m]}
+                  onClick={() => scrollToModel(m)}
+                />
+              ))}
+            </div>
+            {phase !== 'done' && (
+              <button
+                onClick={handleStop}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-red-500/15 border border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/25 transition-all press-effect touch-manipulation"
+                title="停止讨论"
+              >
+                <Square size={10} fill="currentColor" />
+                停止
+              </button>
+            )}
             <button
-              onClick={handleStop}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-red-500/15 border border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/25 transition-all press-effect touch-manipulation"
-              title="停止讨论"
+              onClick={handleReset}
+              className="flex items-center gap-1.5 px-3 py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all press-effect touch-manipulation"
             >
-              <Square size={10} fill="currentColor" />
-              停止
+              <RotateCcw size={12} />
+              新议题
             </button>
-          )}
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-2 glass glass-hover rounded-xl text-xs text-text-4 hover:text-text-2 transition-all press-effect touch-manipulation"
-          >
-            <RotateCcw size={12} />
-            新议题
-          </button>
+          </div>
         </div>
-      </div>
       </header>
 
       {/* Discussion feed */}
@@ -1283,6 +1338,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                 content={consensusContent}
                 errors={modelErrors}
                 isStreaming={phase === 'consensus'}
+                topic={topic}
                 onSave={(newVal) => {
                   setConsensusContent(newVal);
                   setTimeout(() => saveDiscussion(), 50);
@@ -1353,7 +1409,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
                   className={clsx(
                     "p-1.5 md:p-0.5 rounded-lg transition-colors flex-shrink-0 touch-manipulation press-effect",
                     isFollowingUp ? "opacity-50 cursor-not-allowed text-text-5" :
-                    useFollowUpSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
+                      useFollowUpSearch ? "text-violet-400 bg-violet-500/10" : "text-text-5 hover:text-violet-400 hover:bg-violet-500/10"
                   )}
                   title={useFollowUpSearch ? "已开启联网搜索" : "点击开启联网搜索"}
                   disabled={isFollowingUp}

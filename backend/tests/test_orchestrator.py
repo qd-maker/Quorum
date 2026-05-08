@@ -32,12 +32,12 @@ async def test_full_discussion_flow():
 
     call_count = {"stream": 0, "complete": 0}
 
-    async def mock_stream(model, messages, system=None):
+    async def mock_stream(model, messages, system=None, user_id=None):
         call_count["stream"] += 1
         for chunk in [f"[{model}] ", "这是我的观点。"]:
             yield chunk
 
-    async def mock_complete(model, messages, system=None):
+    async def mock_complete(model, messages, system=None, user_id=None):
         call_count["complete"] += 1
         return f"{model} 的总结：核心论点是..."
 
@@ -46,7 +46,7 @@ async def test_full_discussion_flow():
         events = []
         async for event_str in run_discussion(
             topic="AI是否会取代程序员",
-            models=["gpt-4o", "deepseek-chat"],
+            models=["gpt-4o", "deepseek-r1"],
             rounds=2,
         ):
             if event_str.startswith("data: "):
@@ -80,13 +80,13 @@ async def test_discussion_model_error_fallback():
     """单个模型报错时不应中断整体流程，其他模型正常完成。"""
     from services.orchestrator import run_discussion
 
-    async def mock_stream(model, messages, system=None):
+    async def mock_stream(model, messages, system=None, user_id=None):
         if model == "gpt-4o":
             raise Exception("API rate limited")
         for chunk in ["正常回复内容"]:
             yield chunk
 
-    async def mock_complete(model, messages, system=None):
+    async def mock_complete(model, messages, system=None, user_id=None):
         return f"{model} 总结内容"
 
     with patch("services.orchestrator.stream_chat", side_effect=mock_stream), \
@@ -94,7 +94,7 @@ async def test_discussion_model_error_fallback():
         events = []
         async for event_str in run_discussion(
             topic="测试容错",
-            models=["gpt-4o", "deepseek-chat"],
+            models=["gpt-4o", "deepseek-r1"],
             rounds=2,
         ):
             if event_str.startswith("data: "):
@@ -124,10 +124,10 @@ async def test_discussion_with_search():
     """开启搜索时应有 search_done 事件。"""
     from services.orchestrator import run_discussion
 
-    async def mock_stream(model, messages, system=None):
+    async def mock_stream(model, messages, system=None, user_id=None):
         yield "带搜索的回复"
 
-    async def mock_complete(model, messages, system=None):
+    async def mock_complete(model, messages, system=None, user_id=None):
         return "总结"
 
     async def mock_search(query, max_results=5):
@@ -163,7 +163,7 @@ async def test_followup_flow():
     """追问应正常返回 followup_chunk 和 followup_done。"""
     from services.orchestrator import run_followup
 
-    async def mock_stream(model, messages, system=None):
+    async def mock_stream(model, messages, system=None, user_id=None):
         for chunk in ["追问", "回复"]:
             yield chunk
 
@@ -234,7 +234,7 @@ def test_build_consensus_messages():
         topic="测试议题",
         model_summaries={
             "gpt-4o": "GPT的观点总结",
-            "deepseek-chat": "DeepSeek的观点总结",
+            "deepseek-r1": "DeepSeek的观点总结",
         },
     )
 

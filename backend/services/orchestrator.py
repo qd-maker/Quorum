@@ -1,13 +1,13 @@
 """群聊讨论编排器 — Round 1 并发 → Round 2 并发 → 多方共识生成.
 
-通过 asyncio.Queue 保证并行推送的 SSE 事件有序。
+通过 asyncio.Queue 保证并行推送的 SSE 事件有序.
 """
 
 import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from services.model_service import stream_chat, complete_chat, MODEL_NAME_MAP
 from services.search_service import (
@@ -16,8 +16,22 @@ from services.search_service import (
     format_search_context,
     needs_search,
 )
+from services.user_config import get_user_models
 
 logger = logging.getLogger(__name__)
+
+# 客户端断连检查回调类型；返回 True 表示应停止
+StopFn = Callable[[], Awaitable[bool]]
+
+
+async def _is_stopped(should_stop: StopFn | None) -> bool:
+    """安全调用 should_stop，None 永远返回 False."""
+    if should_stop is None:
+        return False
+    try:
+        return await should_stop()
+    except Exception:
+        return False
 
 # ─── System Prompt 模板 ───────────────────────────────
 
@@ -26,15 +40,17 @@ _PROVIDER = {
     "gpt-4o": "OpenAI",
     "gemini-2.0-flash": "Google",
     "grok-2": "xAI",
+    "deepseek-r1": "DeepSeek",
     "deepseek-chat": "DeepSeek",
 }
 
 
-def _get_model_identity(frontend_id: str) -> tuple[str, str]:
+def _get_model_identity(frontend_id: str, user_id: str | None = None) -> tuple[str, str]:
     """动态返回模型名称和公司。
-    名称从 MODEL_NAME_MAP 读取（跟随用户设置），公司固定。
+    名称从 user_config（含 fallback 全局默认）读取，公司固定。
     """
-    actual_name = MODEL_NAME_MAP.get(frontend_id, frontend_id)
+    models = get_user_models(user_id)
+    actual_name = models.get(frontend_id, MODEL_NAME_MAP.get(frontend_id, frontend_id))
     company = _PROVIDER.get(frontend_id, "Unknown")
     return actual_name, company
 
@@ -45,13 +61,14 @@ def _get_base_name(frontend_id: str) -> str:
         "gpt-4o": "GPT",
         "gemini-2.0-flash": "Gemini",
         "grok-2": "Grok",
-        "deepseek-chat": "DeepSeek"
+        "deepseek-r1": "DeepSeek",
+        "deepseek-chat": "DeepSeek",
     }
     return mapping.get(frontend_id, frontend_id)
 
 
-def _round1_system(model: str, topic: str, search_ctx: str = "", role: str = "") -> str:
-    name, company = _get_model_identity(model)
+def _round1_system(model: str, topic: str, search_ctx: str = "", role: str = "", user_id: str | None = None) -> str:
+    name, company = _get_model_identity(model, user_id)
     now_str = get_current_datetime_str()
     search_block = f"\n\n【实时搜索参考】\n{search_ctx}" if search_ctx else ""
     role_block = f"\n你是「{role}」，请严格以此身份参与讨论并发表观点。" if role else ""
@@ -68,8 +85,8 @@ def _round1_system(model: str, topic: str, search_ctx: str = "", role: str = "")
     )
 
 
-def _round2_system(model: str, topic: str, others: dict[str, str], role: str = "") -> str:
-    name, company = _get_model_identity(model)
+def _round2_system(model: str, topic: str, others: dict[str, str], role: str = "", user_id: str | None = None) -> str:
+    name, company = _get_model_identity(model, user_id)
     now_str = get_current_datetime_str()
     role_block = f"\n你是「{role}」，请继续以此身份参与互动。" if role else ""
     other_views = "\n\n".join(
@@ -172,8 +189,14 @@ async def run_discussion(
     roles: dict[str, str] = {},
     use_search: bool = False,
     image: str | None = None,
+    user_id: str | None = None,
+    should_stop: StopFn | None = None,
 ) -> AsyncGenerator[str, None]:
-    """执行完整讨论流程，yield SSE 格式字符串."""
+    """执行完整讨论流程，yield SSE 格式字符串.
+
+    user_id 用于解析每个用户独立的 API 配置；should_stop 是异步谓词，
+    返回 True 时尽快中断流程并退出生成器。
+    """
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     all_views: dict[str, list[str]] = {m: [] for m in models}
@@ -206,7 +229,7 @@ async def run_discussion(
         accumulated = ""
         try:
             role_desc = roles.get(model, "")
-            system = _round1_system(model, topic, search_ctx, role_desc)
+            system = _round1_system(model, topic, search_ctx, role_desc, user_id=user_id)
             # 图片仅在 Round 1 传入（Vision API 格式）
             if image:
                 user_content: str | list = [
@@ -216,7 +239,7 @@ async def run_discussion(
             else:
                 user_content = topic
             messages = [{"role": "user", "content": user_content}]
-            async for chunk in stream_chat(model, messages, system):
+            async for chunk in stream_chat(model, messages, system, user_id=user_id):
                 accumulated += chunk
                 await queue.put(
                     _sse({"type": "model_chunk", "model": model, "round": 1, "content": chunk})
@@ -249,6 +272,14 @@ async def run_discussion(
     last_yield = time.monotonic()
 
     while done_count < target_done:
+        # 客户端断连 → 取消所有子任务并直接结束
+        if await _is_stopped(should_stop):
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info("Discussion R1 aborted: client disconnected")
+            return
+
         try:
             event = await asyncio.wait_for(queue.get(), timeout=10.0)
         except asyncio.TimeoutError:
@@ -280,10 +311,10 @@ async def run_discussion(
             try:
                 others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
                 role_desc = roles.get(model, "")
-                system = _round2_system(model, topic, others, role_desc)
+                system = _round2_system(model, topic, others, role_desc, user_id=user_id)
                 messages = [{"role": "user", "content": f"请回应其他模型并深化讨论议题「{topic}」。"}]
 
-                async for chunk in stream_chat(model, messages, system):
+                async for chunk in stream_chat(model, messages, system, user_id=user_id):
                     accumulated += chunk
                     await queue.put(
                         _sse({"type": "model_chunk", "model": model, "round": 2, "content": chunk})
@@ -316,6 +347,14 @@ async def run_discussion(
             target_done_r2 = len(models)
 
             while done_count_r2 < target_done_r2:
+                # 客户端断连 → 取消所有 r2 子任务
+                if await _is_stopped(should_stop):
+                    for t in tasks_r2:
+                        t.cancel()
+                    await asyncio.gather(*tasks_r2, return_exceptions=True)
+                    logger.info("Discussion R2 aborted: client disconnected")
+                    return
+
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=10.0)
                 except asyncio.TimeoutError:
@@ -336,6 +375,11 @@ async def run_discussion(
             
         except Exception as e:
             logger.exception(f"Round 2 fatal error: {e}")
+
+    # 进入共识阶段前最后一次 check
+    if await _is_stopped(should_stop):
+        logger.info("Discussion aborted before consensus: client disconnected")
+        return
 
     # ── Phase 1：观点总结（每个模型总结自己的核心观点，并发执行）──────
 
@@ -364,7 +408,7 @@ async def run_discussion(
             messages = [{"role": "user", "content": view_text}]
 
             try:
-                summary = await complete_chat(model, messages, system)
+                summary = await complete_chat(model, messages, system, user_id=user_id)
                 logger.info(f"  {base_name} summary: {len(summary)} chars")
                 return model, summary
             except Exception:
@@ -421,7 +465,7 @@ async def run_discussion(
         for consensus_model in healthy_models + fallback_models:
             try:
                 logger.info(f"Trying consensus generation with {consensus_model}")
-                consensus_text = await complete_chat(consensus_model, consensus_msgs, consensus_system)
+                consensus_text = await complete_chat(consensus_model, consensus_msgs, consensus_system, user_id=user_id)
                 if consensus_text and consensus_text.strip():
                     logger.info(f"Consensus generated with {consensus_model}, chars={len(consensus_text)}")
                     yield _sse({"type": "consensus_chunk", "content": consensus_text})
@@ -460,6 +504,8 @@ async def run_followup(
     models: list[str],
     image: str | None = None,
     use_search: bool = False,
+    user_id: str | None = None,
+    should_stop: StopFn | None = None,
 ) -> AsyncGenerator[str, None]:
     """基于完整讨论上下文，以主持人身份回答用户追问."""
     system = _followup_system(topic)
@@ -479,7 +525,7 @@ async def run_followup(
             search_ctx = format_search_context(results, question)
         except Exception as e:
             logger.warning(f"Search failed in followup: {e}")
-            
+
     # 将搜索结果附加到上下文中
     context_str = f"以下是关于「{topic}」的完整讨论记录（含共识）：\n\n{context}"
     if search_ctx:
@@ -492,8 +538,14 @@ async def run_followup(
     ]
 
     for model in models:
+        if await _is_stopped(should_stop):
+            logger.info("Followup aborted: client disconnected")
+            return
         try:
-            async for chunk in stream_chat(model, messages, system):
+            async for chunk in stream_chat(model, messages, system, user_id=user_id):
+                if await _is_stopped(should_stop):
+                    logger.info("Followup stream aborted: client disconnected")
+                    return
                 yield _sse({"type": "followup_chunk", "content": chunk})
             yield _sse({"type": "followup_done"})
             return

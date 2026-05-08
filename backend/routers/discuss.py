@@ -5,17 +5,19 @@ POST /api/discuss/followup — 基于完整讨论上下文的追问端点.
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from auth import get_current_user
 from config import get_settings
+from rate_limit import limiter
 from services.orchestrator import run_discussion, run_followup
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DEFAULT_MODELS = ["gpt-4o", "gemini-2.0-flash", "grok-2", "deepseek-chat"]
+DEFAULT_MODELS = ["gpt-4o", "gemini-2.0-flash", "grok-2", "deepseek-r1"]
 
 
 class DiscussRequest(BaseModel):
@@ -37,7 +39,12 @@ class FollowUpRequest(BaseModel):
 
 
 @router.post("/discuss")
-async def discuss(req: DiscussRequest):
+@limiter.limit("5/minute")
+async def discuss(
+    request: Request,
+    req: DiscussRequest,
+    user_id: str = Depends(get_current_user),
+):
     if not req.topic.strip():
         raise HTTPException(400, "topic 不能为空")
 
@@ -46,9 +53,21 @@ async def discuss(req: DiscussRequest):
         if m not in settings.available_models:
             raise HTTPException(400, f"不支持的模型: {m}")
 
+    async def _should_stop() -> bool:
+        return await request.is_disconnected()
+
     async def event_stream():
         try:
-            async for event in run_discussion(req.topic, req.models, req.rounds, roles=req.roles, image=req.image, use_search=req.use_search):
+            async for event in run_discussion(
+                req.topic,
+                req.models,
+                req.rounds,
+                roles=req.roles,
+                image=req.image,
+                use_search=req.use_search,
+                user_id=user_id,
+                should_stop=_should_stop,
+            ):
                 yield event
         except Exception as e:
             logger.exception("Discussion stream error")
@@ -67,7 +86,12 @@ async def discuss(req: DiscussRequest):
 
 
 @router.post("/discuss/followup")
-async def discuss_followup(req: FollowUpRequest):
+@limiter.limit("15/minute")
+async def discuss_followup(
+    request: Request,
+    req: FollowUpRequest,
+    user_id: str = Depends(get_current_user),
+):
     if not req.question.strip():
         raise HTTPException(400, "question 不能为空")
     if not req.context.strip():
@@ -79,9 +103,21 @@ async def discuss_followup(req: FollowUpRequest):
     if not valid_models:
         raise HTTPException(400, "没有可用的模型")
 
+    async def _should_stop() -> bool:
+        return await request.is_disconnected()
+
     async def event_stream():
         try:
-            async for event in run_followup(req.question, req.topic, req.context, valid_models, image=req.image, use_search=req.use_search):
+            async for event in run_followup(
+                req.question,
+                req.topic,
+                req.context,
+                valid_models,
+                image=req.image,
+                use_search=req.use_search,
+                user_id=user_id,
+                should_stop=_should_stop,
+            ):
                 yield event
         except Exception as e:
             logger.exception("Followup stream error")

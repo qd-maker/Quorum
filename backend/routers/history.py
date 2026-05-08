@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from auth import get_current_user
+from auth import get_current_user_strict as get_current_user
 from services.history_service import (
     list_sessions,
     create_session,

@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Bot, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bot, Mail, Lock, ArrowRight, Loader2, Zap } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import clsx from 'clsx'
+import { useAuth } from '../context/AuthContext'
 
 type Mode = 'login' | 'register'
 
@@ -12,6 +13,16 @@ export default function AuthPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
+    const [demoEnabled, setDemoEnabled] = useState(false)
+    const { enterDemoMode } = useAuth()
+
+    useEffect(() => {
+        // 探测后端是否启用 demo 模式
+        fetch('/api/demo/status')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.enabled) setDemoEnabled(true) })
+            .catch(() => { /* 后端未启动，不显示 demo 入口 */ })
+    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -152,6 +163,28 @@ export default function AuthPage() {
                             )}
                         </button>
                     </form>
+
+                    {/* Demo 立即体验入口 */}
+                    {demoEnabled && (
+                        <>
+                            <div className="my-5 flex items-center gap-3">
+                                <div className="flex-1 h-px bg-white/8" />
+                                <span className="text-[10px] text-text-5 uppercase tracking-wider">或</span>
+                                <div className="flex-1 h-px bg-white/8" />
+                            </div>
+                            <button
+                                onClick={enterDemoMode}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border border-violet-400/30 bg-violet-500/5 text-violet-300 hover:bg-violet-500/10 hover:border-violet-400/50 transition-all"
+                                title="无需登录，立即体验所有功能"
+                            >
+                                <Zap size={14} />
+                                免登录·立即体验 Demo
+                            </button>
+                            <p className="mt-2 text-[11px] text-text-5 text-center">
+                                Demo 模式下不会保存历史记录
+                            </p>
+                        </>
+                    )}
                 </div>
 
                 <p className="text-center text-xs text-text-5 mt-6">

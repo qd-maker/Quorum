@@ -22,7 +22,7 @@ os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 @pytest.fixture
 def mock_stream_chat():
     """Mock stream_chat 为异步生成器，返回预设文本 chunk。"""
-    async def _fake_stream(model, messages, system_prompt=None):
+    async def _fake_stream(model, messages, system_prompt=None, user_id=None):
         for chunk in ["Hello", " from ", model]:
             yield chunk
 
@@ -43,15 +43,16 @@ def mock_search_web():
 
 
 @pytest.fixture
-def mock_auth():
-    """Mock JWT 认证，返回固定 user_id。"""
-    with patch("auth.get_current_user", return_value="test-user-id-123") as m:
-        yield m
-
-
-@pytest.fixture
 def test_client():
-    """创建 FastAPI TestClient。"""
+    """创建 FastAPI TestClient（已 override JWT 依赖，返回固定 test user）."""
     from httpx import AsyncClient, ASGITransport
     from main import app
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    from auth import get_current_user
+
+    async def _fake_user():
+        return "test-user-id-123"
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    yield client
+    app.dependency_overrides.clear()
