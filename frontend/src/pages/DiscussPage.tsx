@@ -345,32 +345,71 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
     setShowRoleSetting(true)
   }
 
-  const suggestions = [
-    {
-      emoji: '🤖',
-      title: 'AI 会在 5 年内取代大多数程序员吗？',
-      hint: '热门科技话题 · 多方碰撞观点',
-      preset: RECOMMENDED_PRESETS[2].roles,
-    },
-    {
-      emoji: '🏗️',
-      title: '创业公司应该选择微服务还是单体架构？',
-      hint: '架构选型 · 技术评审',
-      preset: RECOMMENDED_PRESETS[0].roles,
-    },
-    {
-      emoji: '💡',
-      title: '如果重新设计 React，你会改变什么？',
-      hint: '思维实验 · 创意发散',
-      preset: RECOMMENDED_PRESETS[1].roles,
-    },
-    {
-      emoji: '🌍',
-      title: '远程工作是否会永久改变工作文化？',
-      hint: '社会议题 · 平衡视角',
-      preset: RECOMMENDED_PRESETS[2].roles,
-    },
+  // 默认 fallback 话题（API 不可达时使用）
+  const DEFAULT_SUGGESTIONS = [
+    { emoji: '🤖', title: 'AI 会在 5 年内取代大多数程序员吗？', hint: '热门科技话题 · 多方碰撞观点' },
+    { emoji: '🏗️', title: '创业公司应该选择微服务还是单体架构？', hint: '架构选型 · 技术评审' },
+    { emoji: '💡', title: '如果重新设计 React，你会改变什么？', hint: '思维实验 · 创意发散' },
+    { emoji: '🌍', title: '远程工作是否会永久改变工作文化？', hint: '社会议题 · 平衡视角' },
   ]
+  // 4 张卡片按 index 轮转使用 4 套预设角色（保持你原有的多样性）
+  const SUGGESTION_PRESETS = [
+    RECOMMENDED_PRESETS[2].roles, // 深度评审
+    RECOMMENDED_PRESETS[0].roles, // 极客对峙
+    RECOMMENDED_PRESETS[1].roles, // 头脑风暴
+    RECOMMENDED_PRESETS[2].roles,
+  ]
+
+  const TRENDING_KEY = 'quorum-trending-discuss'
+  const TRENDING_TTL_MS = 24 * 3600 * 1000
+
+  const readCachedSuggestions = (): typeof DEFAULT_SUGGESTIONS | null => {
+    try {
+      const raw = localStorage.getItem(TRENDING_KEY)
+      if (!raw) return null
+      const { items, time } = JSON.parse(raw)
+      if (Date.now() - time < TRENDING_TTL_MS && Array.isArray(items) && items.length === 4) {
+        return items
+      }
+    } catch { /* ignore */ }
+    return null
+  }
+
+  const writeCachedSuggestions = (items: typeof DEFAULT_SUGGESTIONS) => {
+    try {
+      localStorage.setItem(TRENDING_KEY, JSON.stringify({ items, time: Date.now() }))
+    } catch { /* ignore */ }
+  }
+
+  const [suggestions, setSuggestions] = useState<typeof DEFAULT_SUGGESTIONS | null>(
+    () => readCachedSuggestions()
+  )
+  const [trendingLoading, setTrendingLoading] = useState(false)
+
+  const loadTrending = useCallback(async (force = false) => {
+    setTrendingLoading(true)
+    try {
+      const url = `/api/trending-topics${force ? '?refresh=true' : ''}`
+      const resp = await fetch(url)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      const items = Array.isArray(data?.topics_full) && data.topics_full.length === 4
+        ? data.topics_full
+        : DEFAULT_SUGGESTIONS
+      setSuggestions(items)
+      writeCachedSuggestions(items)
+    } catch {
+      setSuggestions(prev => prev ?? DEFAULT_SUGGESTIONS)
+    } finally {
+      setTrendingLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!readCachedSuggestions()) {
+      loadTrending(false)
+    }
+  }, [loadTrending])
 
   const processFile = useCallback((file: File) => {
     setFileError('')
@@ -578,41 +617,74 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
         )}
       </div>
 
-      {/* Suggestions — 推荐话题卡片 */}
+      {/* Suggestions — 推荐话题卡片（动态拉取近期热门） */}
       <div className="w-full max-w-xl mt-3">
         <div className="flex items-center gap-2 mb-3 px-1">
           <Sparkles size={12} className="text-violet-400" />
           <span className="text-xs font-medium text-text-3 uppercase tracking-wider">
             灵感话题 · 一键开聊
           </span>
+          <button
+            type="button"
+            onClick={() => loadTrending(true)}
+            disabled={trendingLoading}
+            title="刷新近期热门话题"
+            className={clsx(
+              'ml-auto p-1 rounded text-text-5 hover:text-violet-300 transition-colors',
+              trendingLoading && 'animate-spin'
+            )}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {suggestions.map((s, i) => (
-            <button
-              key={s.title}
-              onClick={() => onStart(s.title, s.preset, undefined, false)}
-              className="suggestion-card group relative text-left rounded-2xl border border-white/8 bg-bg-3/50 hover:bg-bg-3/90 p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-violet-400/30"
-              style={{ animationDelay: `${i * 60}ms` }}
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg leading-none mt-0.5 select-none transition-transform group-hover:scale-110">
-                  {s.emoji}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-text-2 group-hover:text-text-1 leading-snug font-medium">
-                    {s.title}
-                  </div>
-                  <div className="mt-1 text-[10.5px] text-text-5 leading-snug">
-                    {s.hint}
+          {suggestions === null
+            ? Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={`skel-${i}`}
+                className="suggestion-card rounded-2xl border border-white/8 bg-bg-3/50 p-3.5"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-md skeleton" />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="h-3 rounded skeleton w-[85%]" />
+                    <div className="h-2.5 rounded skeleton w-[55%]" />
                   </div>
                 </div>
-                <ArrowRight
-                  size={12}
-                  className="text-text-5 mt-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all flex-shrink-0"
-                />
               </div>
-            </button>
-          ))}
+            ))
+            : suggestions.map((s, i) => (
+              <button
+                key={s.title}
+                onClick={() => onStart(s.title, SUGGESTION_PRESETS[i] || modelRoles, undefined, false)}
+                className="suggestion-card group relative text-left rounded-2xl border border-white/8 bg-bg-3/50 hover:bg-bg-3/90 p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-violet-400/30"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="text-lg leading-none mt-0.5 select-none transition-transform group-hover:scale-110">
+                    {s.emoji}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-text-2 group-hover:text-text-1 leading-snug font-medium">
+                      {s.title}
+                    </div>
+                    <div className="mt-1 text-[10.5px] text-text-5 leading-snug">
+                      {s.hint}
+                    </div>
+                  </div>
+                  <ArrowRight
+                    size={12}
+                    className="text-text-5 mt-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all flex-shrink-0"
+                  />
+                </div>
+              </button>
+            ))
+          }
         </div>
       </div>
 
