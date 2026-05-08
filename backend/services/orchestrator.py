@@ -224,8 +224,13 @@ async def run_discussion(
 
     yield _sse({"type": "round_start", "round": 1})
 
-    async def _stream_model_r1(model: str):
+    # 错峰启动间隔：避免 4 个 task 在同一 tick 命中代理"上游分组"瞬时饱和
+    _STAGGER_SEC = 0.25
+
+    async def _stream_model_r1(model: str, start_delay: float = 0.0):
         """单个模型的 Round 1 流式输出，推入 queue."""
+        if start_delay:
+            await asyncio.sleep(start_delay)
         accumulated = ""
         try:
             role_desc = roles.get(model, "")
@@ -263,8 +268,11 @@ async def run_discussion(
                 _sse({"type": "model_done", "model": model, "round": 1})
             )
 
-    # 启动并行任务
-    tasks = [asyncio.create_task(_stream_model_r1(m)) for m in models]
+    # 启动并行任务（task 立刻入队，内部分别 0/0.25/0.5/0.75s 后真正发请求）
+    tasks = [
+        asyncio.create_task(_stream_model_r1(m, start_delay=i * _STAGGER_SEC))
+        for i, m in enumerate(models)
+    ]
 
     # 心跳 + 消费 queue
     done_count = 0
@@ -305,8 +313,10 @@ async def run_discussion(
     if rounds >= 2:
         yield _sse({"type": "round_start", "round": 2})
 
-        async def _stream_model_r2(model: str):
+        async def _stream_model_r2(model: str, start_delay: float = 0.0):
             """单个模型的 Round 2 流式输出，推入 queue."""
+            if start_delay:
+                await asyncio.sleep(start_delay)
             accumulated = ""
             try:
                 others = {m: all_views[m][0] for m in models if m != model and all_views[m]}
@@ -340,8 +350,11 @@ async def run_discussion(
                 )
 
         try:
-            # 启动并发任务
-            tasks_r2 = [asyncio.create_task(_stream_model_r2(m)) for m in models]
+            # 启动并发任务（错峰 0.25s）
+            tasks_r2 = [
+                asyncio.create_task(_stream_model_r2(m, start_delay=i * _STAGGER_SEC))
+                for i, m in enumerate(models)
+            ]
 
             done_count_r2 = 0
             target_done_r2 = len(models)
