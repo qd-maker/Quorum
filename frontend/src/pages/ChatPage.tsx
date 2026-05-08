@@ -178,10 +178,69 @@ function AssistantMessage({ msg, sources = [] }: { msg: ChatMessage & { isStream
   )
 }
 
+// ─── Trending topics: 全局共享 + 24h localStorage 缓存 ─
+const TRENDING_TTL_MS = 24 * 3600 * 1000
+const TRENDING_KEY = 'quorum-trending'
+const DEFAULT_TOPICS = ['解释一个技术概念', '帮我写代码', '分析这个问题', '给我一些建议']
+
+interface TrendingCache { items: string[]; time: number }
+
+function readCachedTopics(): string[] | null {
+  try {
+    const raw = localStorage.getItem(TRENDING_KEY)
+    if (!raw) return null
+    const { items, time } = JSON.parse(raw) as TrendingCache
+    if (Date.now() - time < TRENDING_TTL_MS && Array.isArray(items) && items.length === 4) {
+      return items
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+function writeCachedTopics(items: string[]) {
+  try {
+    localStorage.setItem(TRENDING_KEY, JSON.stringify({ items, time: Date.now() }))
+  } catch { /* ignore */ }
+}
+
 // ─── Empty state ──────────────────────────────────────
 function EmptyState({ model, onSend }: { model: ModelId | string; onSend: (text: string) => void }) {
   const normalizedModel = normalizeModelId(model)
   const meta = MODEL_META[normalizedModel]
+
+  // 初值：先用本地缓存，没有则 null（显示 skeleton）
+  const [topics, setTopics] = useState<string[] | null>(() => readCachedTopics())
+  const [loading, setLoading] = useState(false)
+
+  const loadTopics = useCallback(async (force = false) => {
+    setLoading(true)
+    try {
+      const url = `/api/trending-topics${force ? '?refresh=true' : ''}`
+      const resp = await fetch(url)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      const items: string[] = Array.isArray(data?.topics) && data.topics.length === 4
+        ? data.topics
+        : DEFAULT_TOPICS
+      setTopics(items)
+      writeCachedTopics(items)
+    } catch {
+      setTopics(prev => prev ?? DEFAULT_TOPICS)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 首次挂载：本地无缓存则拉取（与切换模型解耦，话题是全局共享的）
+  useEffect(() => {
+    if (!readCachedTopics()) {
+      loadTopics(false)
+    }
+  }, [loadTopics])
+
+  const display = topics ?? Array(4).fill('')
+  const showSkeleton = topics === null
+
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-6 pb-24">
       <div className="w-16 h-16 rounded-2xl mb-5 flex items-center justify-center"
@@ -190,15 +249,46 @@ function EmptyState({ model, onSend }: { model: ModelId | string; onSend: (text:
       </div>
       <h2 className="font-display text-xl font-semibold text-text-1 mb-2">{getModelDisplayName(normalizedModel)}</h2>
       <p className="text-sm text-text-4 max-w-xs">{meta.description} · 有什么可以帮你的？</p>
-      <div className="mt-6 flex flex-wrap gap-2 justify-center max-w-sm">
-        {['解释一个技术概念', '帮我写代码', '分析这个问题', '给我一些建议'].map(s => (
-          <button
-            key={s}
-            onClick={() => onSend(s)}
-            className="px-3 py-1.5 glass rounded-full text-xs text-text-4 cursor-pointer hover:text-text-2 hover:bg-bg-3 transition-colors"
-          >
-            {s}
-          </button>
+
+      {/* 顶部小标题 + 刷新按钮 */}
+      <div className="mt-6 mb-2 flex items-center gap-2 text-[10.5px] text-text-5 uppercase tracking-wider">
+        <span className="w-1 h-1 rounded-full bg-violet-400" />
+        <span>近期热门 · 一键开聊</span>
+        <button
+          onClick={() => loadTopics(true)}
+          disabled={loading}
+          title="刷新热门话题"
+          className={clsx(
+            'ml-1 p-0.5 rounded text-text-5 hover:text-violet-300 transition-colors',
+            loading && 'animate-spin'
+          )}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 justify-center max-w-sm">
+        {display.map((s, i) => (
+          showSkeleton ? (
+            <div
+              key={`skel-${i}`}
+              className="h-7 rounded-full skeleton"
+              style={{ animationDelay: `${i * 80}ms`, width: `${72 + (i % 2) * 24}px` }}
+            />
+          ) : (
+            <button
+              key={s + i}
+              onClick={() => onSend(s)}
+              className="px-3 py-1.5 glass rounded-full text-xs text-text-4 cursor-pointer hover:text-text-2 hover:bg-bg-3 transition-colors animate-fade-in"
+              style={{ animationDelay: `${i * 60}ms` }}
+            >
+              {s}
+            </button>
+          )
         ))}
       </div>
     </div>

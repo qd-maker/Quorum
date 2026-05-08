@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 
 from config import get_settings
 from rate_limit import limiter
-from routers import chat, discuss, history, config_api, auth_router
+from routers import chat, discuss, history, config_api, auth_router, trending
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,6 +49,7 @@ app.include_router(discuss.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(trending.router, prefix="/api")
 
 
 @app.get("/health")
