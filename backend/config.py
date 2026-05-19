@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # 统一 API 中转站配置
-    API_BASE_URL: str = "https://api.bltcy.ai/v1"
+    API_BASE_URL: str = "https://yunwu.ai/v1"
     API_KEY: str = ""
 
     # Supabase

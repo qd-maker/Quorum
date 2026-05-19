@@ -222,7 +222,7 @@ export default function ApiSettingsModal({ onClose }: { onClose: () => void }) {
                             placeholder="sk-..."
                             icon={Key}
                             type="password"
-                            link="https://api.bltcy.ai/register?aff=3bWU85797"
+                            link="https://yunwu.ai"
                         />
                         <p className="text-xs text-text-5 leading-relaxed">
                             如果使用中转站，所有模型将通过此代理访问。优先级高于官方 API。

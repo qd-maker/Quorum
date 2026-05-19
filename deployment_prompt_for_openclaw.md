@@ -43,7 +43,7 @@ Quorum 是一个多 AI 模型群聊讨论平台，技术栈：
 
 # ─── AI 模型 API ──────────────────────────
 # 统一 API 中转站（OpenAI 兼容格式）
-API_BASE_URL=https://api.bltcy.ai/v1
+API_BASE_URL=https://yunwu.ai/v1
 API_KEY=<你的中转站 API Key>
 
 # ─── Supabase（认证 + 数据库）─────────────

@@ -107,7 +107,7 @@ cp .env.example .env
 
 ```env
 # AI 模型 API
-API_BASE_URL=https://api.openai.com/v1   # 或兼容代理地址
+API_BASE_URL=https://yunwu.ai/v1         # 或替换为其他 OpenAI 兼容代理地址
 API_KEY=sk-...
 
 # Supabase
