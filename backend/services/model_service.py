@@ -73,6 +73,59 @@ def set_deepseek_model(api_model: str) -> None:
     MODEL_NAME_MAP["deepseek-chat"] = api_model
 
 
+def _field(obj, name: str, default=None):
+    """兼容 OpenAI SDK 对象和部分中转站透传的 dict chunk。"""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _coerce_content_text(content) -> str:
+    """把兼容接口可能返回的 content 形态收敛成纯文本。"""
+    if not content:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            text = _field(item, "text", None)
+            if text is None:
+                text = _field(item, "content", None)
+            if isinstance(text, str):
+                parts.append(text)
+        return "".join(parts)
+    return ""
+
+
+def _stream_error_message(chunk) -> str | None:
+    """提取中转站在 HTTP 200 流里夹带的 error 信息。"""
+    error = _field(chunk, "error", None)
+    if not error:
+        return None
+    message = _field(error, "message", None)
+    return str(message or error)
+
+
+def _extract_stream_text(chunk) -> str:
+    """从 OpenAI ChatCompletionChunk / dict chunk 中提取增量文本。"""
+    choices = _field(chunk, "choices", None)
+    if not choices:
+        return ""
+
+    choice = choices[0]
+    delta = _field(choice, "delta", None)
+    content = _coerce_content_text(_field(delta, "content", None))
+    if content:
+        return content
+
+    # 少数中转站会把流式片段放在 message.content 中，而不是 delta.content。
+    message = _field(choice, "message", None)
+    return _coerce_content_text(_field(message, "content", None))
+
+
 async def stream_chat(
     model: str,
     messages: list[dict],
@@ -124,11 +177,13 @@ async def stream_chat(
         raise RuntimeError("stream_chat: failed to open stream")
 
     async for chunk in stream:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta.content:
-            yield delta.content
+        error_message = _stream_error_message(chunk)
+        if error_message:
+            raise RuntimeError(error_message)
+
+        content = _extract_stream_text(chunk)
+        if content:
+            yield content
 
 
 async def complete_chat(
