@@ -59,9 +59,11 @@ async def get_current_user(
 
 
 async def get_current_user_strict(
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
 ) -> str:
     """严格模式：必须带有效 Bearer token；用于 history 等敏感端点."""
+    if not authorization:
+        raise HTTPException(401, "未登录，请先登录")
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Authorization header 格式错误，需要 Bearer <token>")
     token = authorization.removeprefix("Bearer ").strip()

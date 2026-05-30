@@ -9,7 +9,7 @@ interface AuthContextType {
     isDemo: boolean
     loading: boolean
     signOut: () => Promise<void>
-    enterDemoMode: () => void
+    enterDemoMode: () => Promise<boolean>
     exitDemoMode: () => void
 }
 
@@ -18,7 +18,7 @@ const AuthContext = createContext<AuthContextType>({
     isDemo: false,
     loading: true,
     signOut: async () => { },
-    enterDemoMode: () => { },
+    enterDemoMode: async () => false,
     exitDemoMode: () => { },
 })
 
@@ -29,6 +29,17 @@ const DEMO_USER = {
     user_metadata: { name: 'Demo 访客' },
 } as unknown as User
 
+async function fetchDemoEnabled(signal?: AbortSignal): Promise<boolean> {
+    try {
+        const resp = await fetch('/api/demo/status', { signal })
+        if (!resp.ok) return false
+        const data = await resp.json()
+        return data?.enabled === true
+    } catch {
+        return false
+    }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
@@ -37,10 +48,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     useEffect(() => {
+        const controller = new AbortController()
+        let disposed = false
+
         // 初始化时获取当前 session
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (disposed) return
             setUser(session?.user ?? null)
+            if (!session?.user && isDemo) {
+                const enabled = await fetchDemoEnabled(controller.signal)
+                if (!disposed && !enabled) {
+                    try { localStorage.removeItem(DEMO_FLAG_KEY) } catch { }
+                    setIsDemo(false)
+                }
+            }
+            if (disposed) return
             setLoading(false)
+        }).catch(() => {
+            if (!disposed) setLoading(false)
         })
 
         // 监听登录/登出变化
@@ -53,12 +78,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         })
 
-        return () => subscription.unsubscribe()
-    }, [])
+        return () => {
+            disposed = true
+            controller.abort()
+            subscription.unsubscribe()
+        }
+    }, [isDemo])
 
-    const enterDemoMode = () => {
+    const enterDemoMode = async () => {
+        const enabled = await fetchDemoEnabled()
+        if (!enabled) {
+            try { localStorage.removeItem(DEMO_FLAG_KEY) } catch { }
+            setIsDemo(false)
+            return false
+        }
         try { localStorage.setItem(DEMO_FLAG_KEY, '1') } catch { }
         setIsDemo(true)
+        return true
     }
 
     const exitDemoMode = () => {

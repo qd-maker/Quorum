@@ -10,16 +10,21 @@ import { supabase } from './supabase'
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token
+    const headers = new Headers(options.headers)
+
+    if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json')
+    }
+
+    if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
+    }
 
     let resp: Response
     try {
         resp = await fetch(url, {
             ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                ...(options.headers as Record<string, string> || {}),
-            },
+            headers,
         })
     } catch (err) {
         // 网络层错误（断网、CORS、DNS 等）
@@ -43,4 +48,16 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     }
 
     return resp
+}
+
+export async function readApiError(resp: Response, fallback = '请求失败，请稍后重试'): Promise<string> {
+    try {
+        const body = await resp.clone().json()
+        if (typeof body?.detail === 'string') return body.detail
+        if (Array.isArray(body?.detail) && body.detail[0]?.msg) return body.detail[0].msg
+        if (typeof body?.message === 'string') return body.message
+    } catch {
+        // ignore non-JSON response
+    }
+    return `${fallback}（HTTP ${resp.status}）`
 }

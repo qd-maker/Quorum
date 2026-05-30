@@ -270,6 +270,7 @@ export default function Sidebar({
   mobileSidebarOpen: boolean
   setMobileSidebarOpen: (open: boolean) => void
 }) {
+  const { isDemo } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' }
     catch { return false }
@@ -311,6 +312,11 @@ export default function Sidebar({
   }, [collapsed])
 
   const fetchHistory = useCallback(async () => {
+    if (isDemo) {
+      setChatHistory({})
+      setDiscussHistory([])
+      return
+    }
     try {
       const res = await apiFetch('/api/sessions?limit=50')
       if (!res.ok) return
@@ -348,7 +354,7 @@ export default function Sidebar({
     } catch {
       /* 静默 */
     }
-  }, [])
+  }, [isDemo])
 
   useEffect(() => {
     fetchHistory()
@@ -358,6 +364,7 @@ export default function Sidebar({
   }, [fetchHistory])
 
   const handleDelete = async (id: string) => {
+    if (isDemo) return
     try {
       const resp = await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
       if (resp.ok) {

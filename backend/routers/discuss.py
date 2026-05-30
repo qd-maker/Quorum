@@ -7,7 +7,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from auth import get_current_user
 from config import get_settings
@@ -18,24 +18,58 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 DEFAULT_MODELS = ["gpt-4o", "gemini-2.0-flash", "grok-2", "deepseek-r1"]
+MAX_DISCUSS_MODELS = 4
+MAX_ROUNDS = 3
+MAX_TOPIC_CHARS = 2_200_000
+MAX_IMAGE_DATA_URL_CHARS = 6_200_000
+MAX_ROLE_CHARS = 80
 
 
 class DiscussRequest(BaseModel):
-    topic: str
-    models: list[str] = DEFAULT_MODELS
-    rounds: int = 2
-    roles: dict[str, str] = {}  # model_id -> role_description (可选)
-    image: str | None = None    # base64 data URL (可选，用于图片分析)
+    topic: str = Field(min_length=1, max_length=MAX_TOPIC_CHARS)
+    models: list[str] = Field(default_factory=lambda: DEFAULT_MODELS.copy(), min_length=1, max_length=MAX_DISCUSS_MODELS)
+    rounds: int = Field(default=2, ge=1, le=MAX_ROUNDS)
+    roles: dict[str, str] = Field(default_factory=dict)  # model_id -> role_description (可选)
+    image: str | None = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)  # base64 data URL (可选，用于图片分析)
     use_search: bool = False    # 强制开启联网搜索
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, models: list[str]) -> list[str]:
+        normalized = [m.strip() for m in models if isinstance(m, str) and m.strip()]
+        if not normalized:
+            raise ValueError("models 不能为空")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("models 不能重复")
+        return normalized
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, roles: dict[str, str]) -> dict[str, str]:
+        cleaned: dict[str, str] = {}
+        for model, role in roles.items():
+            model_key = model.strip()
+            role_value = role.strip()
+            if model_key and role_value:
+                cleaned[model_key] = role_value[:MAX_ROLE_CHARS]
+        return cleaned
 
 
 class FollowUpRequest(BaseModel):
-    question: str
-    topic: str
-    context: str  # 前端传入的完整讨论文本（各轮内容 + 共识）
-    models: list[str] = DEFAULT_MODELS
-    image: str | None = None    # base64 data URL (可选)
+    question: str = Field(min_length=1, max_length=MAX_TOPIC_CHARS)
+    topic: str = Field(min_length=1, max_length=MAX_TOPIC_CHARS)
+    context: str = Field(min_length=1, max_length=MAX_TOPIC_CHARS)  # 前端传入的完整讨论文本（各轮内容 + 共识）
+    models: list[str] = Field(default_factory=lambda: DEFAULT_MODELS.copy(), min_length=1, max_length=MAX_DISCUSS_MODELS)
+    image: str | None = Field(default=None, max_length=MAX_IMAGE_DATA_URL_CHARS)  # base64 data URL (可选)
     use_search: bool = False
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, models: list[str]) -> list[str]:
+        normalized = [m.strip() for m in models if isinstance(m, str) and m.strip()]
+        if not normalized:
+            raise ValueError("models 不能为空")
+        return list(dict.fromkeys(normalized))
 
 
 @router.post("/discuss")

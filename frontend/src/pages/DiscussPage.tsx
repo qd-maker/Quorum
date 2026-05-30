@@ -15,8 +15,9 @@ import TypingIndicator from '../components/TypingIndicator'
 import ConsensusCard from '../components/ConsensusCard'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CopyButton from '../components/CopyButton'
-import { apiFetch } from '../lib/api'
+import { apiFetch, readApiError } from '../lib/api'
 import { useHotkey } from '../lib/useHotkey'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Types ───────────────────────────────────────
 type Phase = 'idle' | 'round1' | 'between' | 'round2' | 'consensus' | 'done'
@@ -316,6 +317,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
   onLoad: (id: string) => void;
   onDelete?: (id: string) => void
 }) {
+  const { isDemo } = useAuth()
   const [topic, setTopic] = useState('')
   const [history, setHistory] = useState<{ id: string; title: string; preview: string; createdAt: string }[]>([])
   const [modelRoles, setModelRoles] = useState<Record<string, string>>({
@@ -452,6 +454,10 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
   }
 
   useEffect(() => {
+    if (isDemo) {
+      setHistory([])
+      return
+    }
     apiFetch('/api/sessions?limit=20')
       .then(r => r.ok ? r.json() : [])
       .then(data => {
@@ -466,7 +472,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
         setHistory(items)
       })
       .catch(() => { })
-  }, [])
+  }, [isDemo])
 
   const canStart = topic.trim().length > 0 || attachment !== null
 
@@ -737,6 +743,7 @@ function DiscussEmptyState({ onStart, onLoad, onDelete }: {
 // ─── DiscussPage ──────────────────────────────────
 export default function DiscussPage({ active, sessionId }: { active: boolean; sessionId?: string }) {
   const navigate = useNavigate()
+  const { isDemo } = useAuth()
   const [topic, setTopic] = useState('')
   const [roles, setRoles] = useState<Record<string, string>>({})
   const [phase, setPhase] = useState<Phase>('idle')
@@ -792,6 +799,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   // 加载历史讨论（仅在 active 且 sessionId 变化时触发）
   useEffect(() => {
     if (!active) return  // 页面隐藏时不加载，防止打断正在进行的讨论
+    if (isDemo) return
     if (!sessionId) {
       sessionIdRef.current = null
       return
@@ -817,10 +825,11 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         setMessages(msgs)
       })
       .catch(() => { })
-  }, [active, sessionId])
+  }, [active, sessionId, isDemo])
 
   // 保存讨论到 Supabase（使用 refs 避免闭包陷阱，PUT 全量替换）
   const saveDiscussion = useCallback(async (consensusOverride?: string) => {
+    if (isDemo) return
     try {
       const currentTopic = topicRef.current
       const currentMessages = messagesRef.current
@@ -867,7 +876,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
 
       window.dispatchEvent(new Event('history-updated'))
     } catch { /* 静默 */ }
-  }, [])
+  }, [isDemo])
 
   const runDiscussion = useCallback(async (t: string, assignedRoles: Record<string, string>, imageData?: string, use_search = false) => {
     setTopic(t)
@@ -934,7 +943,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         signal: abortRef.current.signal,
       })
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error(await readApiError(res, '讨论请求失败'))
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
@@ -1071,11 +1080,12 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
   }, [])
 
   const handleDelete = useCallback(async (id: string) => {
+    if (isDemo) return
     try {
       await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
       window.dispatchEvent(new Event('history-updated'))
     } catch { /* 静默 */ }
-  }, [])
+  }, [isDemo])
 
   // 中断讨论（保留已接收内容）
   const handleStop = useCallback(() => {
@@ -1173,7 +1183,7 @@ export default function DiscussPage({ active, sessionId }: { active: boolean; se
         body: JSON.stringify(followUpReqBody),
         signal: followUpAbortRef.current.signal,
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error(await readApiError(res, '追问请求失败'))
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
