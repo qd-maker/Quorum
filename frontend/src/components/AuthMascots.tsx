@@ -15,10 +15,6 @@ type Look = {
     y: number
 }
 
-const bodyTransition = 'transform 900ms cubic-bezier(0.22, 1, 0.36, 1), height 900ms cubic-bezier(0.22, 1, 0.36, 1)'
-const faceTransition = 'left 720ms cubic-bezier(0.22, 1, 0.36, 1), top 720ms cubic-bezier(0.22, 1, 0.36, 1)'
-const eyeTransition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
-
 const prefersReducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -49,7 +45,7 @@ function Pupil({ size = 12, pupilColor = 'black', lookX = 0, lookY = 0 }: PupilP
                 height: `${size}px`,
                 backgroundColor: pupilColor,
                 transform: `translate3d(${lookX}px, ${lookY}px, 0)`,
-                transition: eyeTransition,
+                transition: 'transform 80ms ease-out',
                 willChange: 'transform',
             }}
         />
@@ -95,7 +91,7 @@ function EyeBall({
                         height: `${pupilSize}px`,
                         backgroundColor: pupilColor,
                         transform: `translate3d(${lookX}px, ${lookY}px, 0)`,
-                        transition: eyeTransition,
+                        transition: 'transform 80ms ease-out',
                         willChange: 'transform',
                     }}
                 />
@@ -180,8 +176,8 @@ export default function AuthMascots({
                 lastMeasure = now
             }
 
-            current.x += (target.x - current.x) * 0.14
-            current.y += (target.y - current.y) * 0.14
+            current.x += (target.x - current.x) * 0.3
+            current.y += (target.y - current.y) * 0.3
 
             setPointer(prev => {
                 if (Math.abs(prev.x - current.x) < 0.08 && Math.abs(prev.y - current.y) < 0.08) {
@@ -307,6 +303,10 @@ export default function AuthMascots({
     const sideForceX = isPeekingMode ? -5 : undefined
     const sideForceY = isPeekingMode ? -4 : undefined
 
+    const isFixedMode = isPeekingMode || isLookingAtEachOther || isTyping || isHidingPassword
+    const faceTransition = isFixedMode ? 'transform 600ms cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 80ms ease-out'
+    const bodyTransition = isFixedMode ? 'transform 700ms cubic-bezier(0.22, 1, 0.36, 1), height 700ms cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 120ms ease-out, height 700ms cubic-bezier(0.22, 1, 0.36, 1)'
+
     return (
         <div className="relative" style={{ width: '550px', height: '400px' }}>
             <div
@@ -329,10 +329,10 @@ export default function AuthMascots({
                     left: '88px',
                     width: '168px',
                     height: isTyping || isHidingPassword ? '390px' : '355px',
-                    background: 'linear-gradient(160deg, #7C3AED 0%, #2563EB 100%)',
+                    background: 'linear-gradient(160deg, #8B5CF6 0%, #3B82F6 100%)',
                     borderRadius: '36px 48px 24px 28px',
                     border: '1px solid rgba(255, 255, 255, 0.18)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 24px 52px rgba(37, 99, 235, 0.16)',
+                    boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.3), inset 0 -4px 12px rgba(0,0,0,0.2), 0 24px 52px rgba(37, 99, 235, 0.25)',
                     zIndex: 1,
                     animationDuration: '7s',
                     animationDelay: '0s',
@@ -358,16 +358,13 @@ export default function AuthMascots({
                 <div
                     className="absolute flex gap-8"
                     style={{
-                        left: isPeekingMode
-                            ? '24px'
-                            : isLookingAtEachOther
-                                ? '58px'
-                                : `${48 + leadPos.faceX}px`,
-                        top: isPeekingMode
-                            ? '46px'
-                            : isLookingAtEachOther
-                                ? '74px'
-                                : `${52 + leadPos.faceY}px`,
+                        left: 0,
+                        top: 0,
+                        transform: `translate3d(${
+                            isPeekingMode ? 24 : isLookingAtEachOther ? 58 : 48 + leadPos.faceX
+                        }px, ${
+                            isPeekingMode ? 46 : isLookingAtEachOther ? 74 : 52 + leadPos.faceY
+                        }px, 0)`,
                         transition: faceTransition,
                     }}
                 >
@@ -399,10 +396,10 @@ export default function AuthMascots({
                     left: '232px',
                     width: '136px',
                     height: '292px',
-                    background: 'linear-gradient(180deg, #121826 0%, #1F2937 100%)',
+                    background: 'linear-gradient(180deg, #1E293B 0%, #0F172A 100%)',
                     borderRadius: '30px 30px 18px 18px',
                     border: '1px solid rgba(148, 163, 184, 0.24)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 20px 45px rgba(2,6,23,0.22)',
+                    boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.15), inset 0 -4px 12px rgba(0,0,0,0.4), 0 20px 45px rgba(2,6,23,0.35)',
                     zIndex: 2,
                     animationDuration: '8s',
                     animationDelay: '-2s',
@@ -432,16 +429,13 @@ export default function AuthMascots({
                 <div
                     className="absolute flex gap-6"
                     style={{
-                        left: isPeekingMode
-                            ? '18px'
-                            : isLookingAtEachOther
-                                ? '36px'
-                                : `${28 + corePos.faceX}px`,
-                        top: isPeekingMode
-                            ? '42px'
-                            : isLookingAtEachOther
-                                ? '24px'
-                                : `${46 + corePos.faceY}px`,
+                        left: 0,
+                        top: 0,
+                        transform: `translate3d(${
+                            isPeekingMode ? 18 : isLookingAtEachOther ? 36 : 28 + corePos.faceX
+                        }px, ${
+                            isPeekingMode ? 42 : isLookingAtEachOther ? 24 : 46 + corePos.faceY
+                        }px, 0)`,
                         transition: faceTransition,
                     }}
                 >
@@ -474,10 +468,10 @@ export default function AuthMascots({
                     width: '228px',
                     height: '178px',
                     zIndex: 3,
-                    background: 'linear-gradient(145deg, #10B981 0%, #22D3EE 100%)',
+                    background: 'linear-gradient(145deg, #34D399 0%, #22D3EE 100%)',
                     borderRadius: '44px 86px 28px 26px',
                     border: '1px solid rgba(255,255,255,0.2)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.24), 0 18px 42px rgba(16,185,129,0.14)',
+                    boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.4), inset 0 -4px 12px rgba(0,0,0,0.15), 0 18px 42px rgba(16,185,129,0.25)',
                     animationDuration: '6.5s',
                     animationDelay: '-1s',
                     transform: isPeekingMode
@@ -499,8 +493,9 @@ export default function AuthMascots({
                 <div
                     className="absolute flex gap-8"
                     style={{
-                        left: isPeekingMode ? '54px' : `${74 + (scoutPos.faceX || 0)}px`,
-                        top: isPeekingMode ? '72px' : `${78 + (scoutPos.faceY || 0)}px`,
+                        left: 0,
+                        top: 0,
+                        transform: `translate3d(${isPeekingMode ? 54 : 74 + (scoutPos.faceX || 0)}px, ${isPeekingMode ? 72 : 78 + (scoutPos.faceY || 0)}px, 0)`,
                         transition: faceTransition,
                     }}
                 >
@@ -516,10 +511,10 @@ export default function AuthMascots({
                     left: '316px',
                     width: '154px',
                     height: '218px',
-                    background: 'linear-gradient(180deg, #FACC15 0%, #F59E0B 100%)',
+                    background: 'linear-gradient(180deg, #FDE047 0%, #F59E0B 100%)',
                     borderRadius: '32px 72px 26px 30px',
                     border: '1px solid rgba(255,255,255,0.28)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 18px 42px rgba(245,158,11,0.16)',
+                    boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.5), inset 0 -4px 12px rgba(0,0,0,0.15), 0 18px 42px rgba(245,158,11,0.25)',
                     zIndex: 4,
                     animationDuration: '7.5s',
                     animationDelay: '-3s',
@@ -534,8 +529,9 @@ export default function AuthMascots({
                 <div
                     className="absolute flex gap-6"
                     style={{
-                        left: isPeekingMode ? '24px' : `${50 + (judgePos.faceX || 0)}px`,
-                        top: isPeekingMode ? '40px' : `${44 + (judgePos.faceY || 0)}px`,
+                        left: 0,
+                        top: 0,
+                        transform: `translate3d(${isPeekingMode ? 24 : 50 + (judgePos.faceX || 0)}px, ${isPeekingMode ? 40 : 44 + (judgePos.faceY || 0)}px, 0)`,
                         transition: faceTransition,
                     }}
                 >
@@ -545,8 +541,9 @@ export default function AuthMascots({
                 <div
                     className="absolute w-20 h-[4px] bg-[#2D2D2D] rounded-full"
                     style={{
-                        left: isPeekingMode ? '16px' : `${38 + (judgePos.faceX || 0)}px`,
-                        top: isPeekingMode ? '92px' : `${92 + (judgePos.faceY || 0)}px`,
+                        left: 0,
+                        top: 0,
+                        transform: `translate3d(${isPeekingMode ? 16 : 38 + (judgePos.faceX || 0)}px, ${isPeekingMode ? 92 : 92 + (judgePos.faceY || 0)}px, 0)`,
                         transition: faceTransition,
                     }}
                 />

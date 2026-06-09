@@ -187,20 +187,20 @@ export default function AuthPage() {
                     </div>
 
                     <div className="relative z-20 mt-16 max-w-xl">
-                        <p className="mb-4 text-sm font-medium uppercase tracking-[0.18em] text-[#95c5ad]">
+                        <p className="mb-4 text-sm font-medium uppercase tracking-[0.18em] text-[#95c5ad] animate-fade-in-up" style={{ opacity: 0, animationDelay: '100ms' }}>
                             多模型协作式 AI 对话平台
                         </p>
-                        <h1 className="max-w-[11ch] text-5xl font-bold leading-[1.05] tracking-tight">
+                        <h1 className="max-w-[11ch] text-5xl font-bold leading-[1.05] tracking-tight animate-fade-in-up" style={{ opacity: 0, animationDelay: '250ms' }}>
                             把一次提问变成一场圆桌评审
                         </h1>
-                        <p className="mt-6 max-w-lg text-base leading-7 text-[#d8e6d5]">
+                        <p className="mt-6 max-w-lg text-base leading-7 text-[#d8e6d5] animate-fade-in-up" style={{ opacity: 0, animationDelay: '400ms' }}>
                             Quorum 适合用来做技术方案评审、产品决策、创意发散和复杂问题复盘。它不只是聊天框，而是能留下过程、观点和结论的协作记录。
                         </p>
                     </div>
 
                     <div className="relative z-20 mt-10 grid max-w-xl gap-3">
-                        {valueProps.map(item => (
-                            <div key={item.title} className="flex gap-3 border-t border-[#f7f6f2]/10 pt-4">
+                        {valueProps.map((item, i) => (
+                            <div key={item.title} className="flex gap-3 border-t border-[#f7f6f2]/10 pt-4 animate-fade-in-up" style={{ opacity: 0, animationDelay: `${550 + i * 100}ms` }}>
                                 <item.icon className="mt-0.5 size-5 shrink-0 text-[#f0b35b]" strokeWidth={1.8} />
                                 <div>
                                     <h2 className="text-sm font-semibold text-[#f7f6f2]">{item.title}</h2>
@@ -210,7 +210,7 @@ export default function AuthPage() {
                         ))}
                     </div>
 
-                    <div className="relative z-20 mt-auto flex justify-center pt-8 select-none pointer-events-none">
+                    <div className="relative z-20 mt-auto flex justify-center pt-8 select-none pointer-events-none animate-fade-in-up" style={{ opacity: 0, animationDelay: '850ms' }}>
                         <div className="origin-bottom scale-[0.8] xl:scale-90 2xl:scale-100">
                             <AuthMascots
                                 isTyping={isTyping}
