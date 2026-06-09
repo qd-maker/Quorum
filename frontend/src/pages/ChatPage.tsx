@@ -10,8 +10,9 @@ import { ModelAvatar } from '../components/ModelBubble'
 import TypingIndicator from '../components/TypingIndicator'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CopyButton from '../components/CopyButton'
-import { apiFetch } from '../lib/api'
+import { apiFetch, readApiError } from '../lib/api'
 import { useHotkey } from '../lib/useHotkey'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Types ───────────────────────────────────────────
 interface Attachment {
@@ -298,6 +299,7 @@ function EmptyState({ model, onSend }: { model: ModelId | string; onSend: (text:
 // ─── ChatPage ─────────────────────────────────────────
 export default function ChatPage({ active, sessionId }: { active: boolean; sessionId?: string }) {
   const navigate = useNavigate()
+  const { isDemo } = useAuth()
   const [model, setModel] = useState<ModelId>('gpt-4o')
   const [messages, setMessages] = useState<(ChatMessage & { isStreaming?: boolean; attachment?: Attachment })[]>([])
   const [input, setInput] = useState('')
@@ -356,6 +358,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
   // 加载历史会话
   useEffect(() => {
     if (!active) return
+    if (isDemo) return
     if (!sessionId) {
       if (sessionIdRef.current !== null) {
         if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
@@ -384,7 +387,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         updateMessages(() => msgs)
       })
       .catch(() => { sessionIdRef.current = null })
-  }, [active, sessionId])
+  }, [active, sessionId, isDemo])
 
   // ─── 文件处理 ──────────────────────────────────────
   const processFile = useCallback((file: File) => {
@@ -430,6 +433,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
 
   // ─── 保存会话 ──────────────────────────────────────
   const saveSession = useCallback(async () => {
+    if (isDemo) return
     try {
       const allMsgs = messagesRef.current
       if (allMsgs.length === 0) return
@@ -462,7 +466,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
       })
       window.dispatchEvent(new Event('history-updated'))
     } catch (e) { console.error('Save session failed:', e) }
-  }, [])
+  }, [isDemo])
 
   const handleStop = useCallback(() => {
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null }
@@ -534,7 +538,7 @@ export default function ChatPage({ active, sessionId }: { active: boolean; sessi
         body: JSON.stringify({ model: currentModel, messages: apiMessages, stream: true, use_search: useSearch }),
         signal: abortRef.current.signal,
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error(await readApiError(res, '对话请求失败'))
 
       const aiMsg: ChatMessage & { isStreaming: boolean } = {
         id: aiId, role: 'assistant', content: '', model: currentModel, timestamp: Date.now(), isStreaming: true,

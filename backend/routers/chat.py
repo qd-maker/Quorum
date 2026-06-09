@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from auth import get_current_user
 from config import get_settings
@@ -21,12 +21,28 @@ from services.search_service import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+ALLOWED_MESSAGE_ROLES = {"system", "user", "assistant", "model"}
+MAX_MESSAGES_PER_REQUEST = 60
+
 
 class ChatRequest(BaseModel):
-    model: str
-    messages: list[dict]
+    model: str = Field(min_length=1, max_length=120)
+    messages: list[dict] = Field(default_factory=list, max_length=MAX_MESSAGES_PER_REQUEST)
     stream: bool = True
     use_search: bool = False
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, messages: list[dict]) -> list[dict]:
+        for index, message in enumerate(messages):
+            if not isinstance(message, dict):
+                raise ValueError(f"messages[{index}] 必须是对象")
+            role = message.get("role")
+            if role not in ALLOWED_MESSAGE_ROLES:
+                raise ValueError(f"messages[{index}].role 不合法")
+            if "content" not in message:
+                raise ValueError(f"messages[{index}].content 不能为空")
+        return messages
 
 
 def _build_system_prompt(search_ctx: str) -> str:

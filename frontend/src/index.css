@@ -365,6 +365,28 @@ body,
   box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.4), 0 8px 32px var(--input-glow-shadow);
 }
 
+/* ─── Auth mascots idle breathing ───────────────── */
+/* 用独立的 `translate` 通道做呼吸浮动，避免和身体 skew 的 `transform` 冲突。 */
+@keyframes mascotFloat {
+  0%, 100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -6px;
+  }
+}
+
+.mascot-float {
+  animation: mascotFloat 7s ease-in-out infinite;
+  will-change: translate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-float {
+    animation: none !important;
+  }
+}
+
 /* ─── Typing dots ───────────────────────────────── */
 .dot-1 {
   animation: typing 1.2s 0.0s ease-in-out infinite;
